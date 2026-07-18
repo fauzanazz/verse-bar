@@ -280,7 +280,7 @@ class LyricsService: ObservableObject {
                 } else if let query = self.coverFallbackQuery(for: track) {
                     Logger.info("No synced lyrics found; trying cover fallback with query: \(query)", category: "lyrics")
                     DispatchQueue.main.async {
-                        self.fetchCoverPlainLyrics(track: track, query: query)
+                        self.fetchCoverLyrics(track: track, query: query)
                     }
                 } else {
                     Logger.info("No synced lyrics found in search results", category: "lyrics")
@@ -345,7 +345,7 @@ class LyricsService: ObservableObject {
             .joined(separator: " ")
     }
 
-    private func fetchCoverPlainLyrics(track: Track, query: String, allowModelFallback: Bool = true) {
+    private func fetchCoverLyrics(track: Track, query: String, allowModelFallback: Bool = true) {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         guard let url = URL(string: "https://lrclib.net/api/search?q=\(encodedQuery)") else {
             isFetching = false
@@ -376,20 +376,17 @@ class LyricsService: ObservableObject {
 
             do {
                 let results = try JSONDecoder().decode([LRCLIBResponse].self, from: data)
-                let plain = results
-                    .compactMap(\.plainLyrics)
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .first(where: { !$0.isEmpty })
+                let result = results.first(where: {
+                    $0.syncedLyrics != nil && !($0.syncedLyrics?.isEmpty ?? true)
+                }) ?? results.first(where: {
+                    !($0.plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                })
 
                 DispatchQueue.main.async {
                     guard self.isCurrentTrack(track) else { return }
-                    if let plain = plain {
-                        self.plainLyrics = plain
-                        self.lyricLines = []
-                        self.currentLineIndex = nil
-                        self.status = .plainFound
-                        self.isFetching = false
-                        Logger.info("Loaded full cover lyrics: \(track.title)", category: "lyrics")
+                    if let result {
+                        self.useSearchResult(result)
+                        Logger.info("Loaded cover lyrics: \(track.title)", category: "lyrics")
                     } else if allowModelFallback {
                         self.fetchModelNormalizedLyrics(track: track, previousQuery: query)
                     } else {
@@ -421,7 +418,7 @@ class LyricsService: ObservableObject {
                 status = .notFound
                 isFetching = false
             } else {
-                fetchCoverPlainLyrics(track: track, query: cached.query, allowModelFallback: false)
+                fetchCoverLyrics(track: track, query: cached.query, allowModelFallback: false)
             }
             return
         }
@@ -498,7 +495,7 @@ class LyricsService: ObservableObject {
                         normalizedArtist: artist
                     )
                     Logger.info("Ollama normalized cover metadata: \(query)", category: "lyrics")
-                    self.fetchCoverPlainLyrics(track: track, query: query, allowModelFallback: false)
+                    self.fetchCoverLyrics(track: track, query: query, allowModelFallback: false)
                 }
             } catch {
                 Logger.error("Ollama cover metadata fallback failed", category: "lyrics", error: error)

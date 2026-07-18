@@ -79,10 +79,21 @@ class StatusItemManager: NSObject {
             ? NSSize(width: 300, height: 180)
             : NSSize(width: 320, height: 420)
         popover.contentSize = size
-        lyricsWindow?.setContentSize(size)
-        lyricsWindow?.minSize = settings.zenMode
+
+        guard let window = lyricsWindow else { return }
+        let minimumSize = settings.zenMode
             ? NSSize(width: 280, height: 140)
             : NSSize(width: 320, height: 420)
+        window.minSize = minimumSize
+
+        let currentSize = window.contentLayoutRect.size
+        let fittedSize = NSSize(
+            width: max(currentSize.width, minimumSize.width),
+            height: max(currentSize.height, minimumSize.height)
+        )
+        if fittedSize != currentSize {
+            window.setContentSize(fittedSize)
+        }
     }
     
     private func setupBindings() {

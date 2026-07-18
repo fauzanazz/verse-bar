@@ -33,17 +33,24 @@ struct PopoverView: View {
     }
 
     private var zenContent: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Spacer()
-                pinButton
-                modeButton
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
+        GeometryReader { geometry in
+            let scale = min(2.4, max(0.8, min(
+                geometry.size.width / 300,
+                geometry.size.height / 180
+            )))
 
-            lyricsContent
-                .frame(maxHeight: .infinity)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Spacer()
+                    pinButton
+                    modeButton
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+
+                lyricsContent(scale: scale)
+                    .frame(maxHeight: .infinity)
+            }
         }
     }
 
@@ -72,7 +79,7 @@ struct PopoverView: View {
                 trackPanel(track)
             }
 
-            lyricsContent
+            lyricsContent()
                 .frame(maxHeight: .infinity)
 
             if let track = playbackEngine.currentTrack,
@@ -166,36 +173,37 @@ struct PopoverView: View {
     }
 
     @ViewBuilder
-    private var lyricsContent: some View {
+    private func lyricsContent(scale: CGFloat = 1) -> some View {
         if playbackEngine.currentTrack == nil {
-            statusText("Play music to see lyrics")
+            statusText("Play music to see lyrics", scale: scale)
         } else if lyricsService.isFetching {
             ProgressView()
-                .controlSize(.small)
+                .controlSize(scale >= 1.5 ? .regular : .small)
         } else if let plainLyrics = lyricsService.plainLyrics, !plainLyrics.isEmpty {
             ScrollView {
                 Text(plainLyrics)
-                    .font(.system(size: 15, design: .rounded))
+                    .font(.system(size: 15 * scale, design: .rounded))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .multilineTextAlignment(.leading)
                     .textSelection(.enabled)
-                    .padding(14)
+                    .padding(14 * scale)
             }
         } else if lyricsService.lyricLines.isEmpty {
-            lyricsFailureContent
+            lyricsFailureContent(scale: scale)
         } else {
-            syncedLyrics
+            syncedLyrics(scale: scale)
         }
     }
 
-    private var syncedLyrics: some View {
+    private func syncedLyrics(scale: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: 4 * scale) {
                     ForEach(Array(lyricsService.lyricLines.enumerated()), id: \.offset) { index, line in
                         LyricRow(
                             line: line,
-                            isActive: lyricsService.currentLineIndex == index
+                            isActive: lyricsService.currentLineIndex == index,
+                            scale: scale
                         )
                         .id(index)
                         .onTapGesture {
@@ -203,7 +211,7 @@ struct PopoverView: View {
                         }
                     }
                 }
-                .padding(10)
+                .padding(10 * scale)
             }
             .onChange(of: lyricsService.currentLineIndex) { _, newIndex in
                 guard let newIndex else { return }
@@ -254,16 +262,16 @@ struct PopoverView: View {
         .padding(.horizontal, 16)
     }
 
-    private var lyricsFailureContent: some View {
+    private func lyricsFailureContent(scale: CGFloat) -> some View {
         VStack(spacing: 0) {
-            statusText(lyricsStatusMessage)
+            statusText(lyricsStatusMessage, scale: scale)
 
             if canSearchManually {
                 Button("Search lyrics manually") {
                     showingManualSearch = true
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(scale >= 1.5 ? .regular : .small)
             }
         }
     }
@@ -277,12 +285,12 @@ struct PopoverView: View {
         }
     }
 
-    private func statusText(_ message: String) -> some View {
+    private func statusText(_ message: String, scale: CGFloat) -> some View {
         Text(message)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .font(.system(size: 13 * scale, weight: .medium, design: .rounded))
             .foregroundColor(.secondary)
             .multilineTextAlignment(.center)
-            .padding(20)
+            .padding(20 * scale)
     }
 
     private var lyricsStatusMessage: String {

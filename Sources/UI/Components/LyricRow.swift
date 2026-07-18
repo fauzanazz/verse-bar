@@ -3,6 +3,7 @@ import SwiftUI
 struct LyricRow: View {
     let line: LyricLine
     let isActive: Bool
+    var scale: CGFloat = 1
     @ObservedObject private var settings = AppSettings.shared
 
     private var hasRomanized: Bool {
@@ -12,19 +13,19 @@ struct LyricRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: hasRomanized ? 2 : 0) {
             Text(line.text)
-                .font(.system(size: isActive ? 16 : 14, weight: isActive ? .bold : .medium, design: .rounded))
+                .font(.system(size: (isActive ? 16 : 14) * scale, weight: isActive ? .bold : .medium, design: .rounded))
                 .foregroundColor(isActive ? .accentColor : .primary)
                 .opacity(isActive ? 1.0 : 0.5)
 
             if hasRomanized, let romanized = line.romanized {
                 Text(romanized)
-                    .font(.system(size: isActive ? 12 : 11, weight: .regular, design: .rounded))
+                    .font(.system(size: (isActive ? 12 : 11) * scale, weight: .regular, design: .rounded))
                     .foregroundColor(isActive ? .accentColor.opacity(0.85) : .secondary)
                     .opacity(isActive ? 0.9 : 0.45)
             }
         }
-        .padding(.vertical, hasRomanized ? 6 : 2)
-        .padding(.horizontal, 10)
+        .padding(.vertical, (hasRomanized ? 6 : 2) * scale)
+        .padding(.horizontal, 10 * scale)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             isActive ?

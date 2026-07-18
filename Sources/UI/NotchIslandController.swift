@@ -26,6 +26,7 @@ final class NotchIslandController: NSObject {
 
     private let settings = AppSettings.shared
     private let playbackEngine = PlaybackEngine.shared
+    private let lyricsService = LyricsService.shared
 
     /// Compact pill dimensions (excluding any notch reservation).
     private let compactBodyHeight: CGFloat = 30
@@ -78,6 +79,15 @@ final class NotchIslandController: NSObject {
         playbackEngine.$currentTrack
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyVisibility() }
+            .store(in: &cancellables)
+
+        lyricsService.$currentLineIndex
+            .combineLatest(lyricsService.$lyricLines, settings.$showRomanization)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.repositionPanel(expanded: self.viewModel.isExpanded)
+            }
             .store(in: &cancellables)
     }
 
@@ -187,17 +197,35 @@ final class NotchIslandController: NSObject {
         notchWidth = 0
     }
 
+    private var currentLyric: String? {
+        guard let index = lyricsService.currentLineIndex,
+              lyricsService.lyricLines.indices.contains(index) else {
+            return nil
+        }
+        let line = lyricsService.lyricLines[index]
+        let text = settings.showRomanization ? line.romanized ?? line.text : line.text
+        return text.isEmpty ? nil : text
+    }
+
     // MARK: - Frame computation
 
     private func computeFrame(expanded: Bool) -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first ?? NSScreen.screens[0]
         let screenFrame = screen.frame
 
-        let baseWidth = expanded ? minExpandedWidth : minCompactWidth
-        // On notched displays widen the pill so it clearly overhangs the notch.
-        let width = notchHeight > 0
+        var baseWidth = expanded ? minExpandedWidth : minCompactWidth
+        if !expanded, let lyric = currentLyric {
+            let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            let textWidth = ceil((lyric as NSString).size(withAttributes: [.font: font]).width)
+            baseWidth = max(baseWidth, textWidth + 68)
+        }
+
+        // Keep enough overhang around a physical notch, then cap the island
+        // to the current display so exceptionally long lyrics still fit.
+        let desiredWidth = notchHeight > 0
             ? max(baseWidth, notchWidth + notchOverhang * 2)
             : baseWidth
+        let width = min(desiredWidth, screenFrame.width - 32)
 
         let bodyHeight = expanded ? expandedBodyHeight : compactBodyHeight
         let totalHeight = notchHeight + bodyHeight

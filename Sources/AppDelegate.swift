@@ -6,6 +6,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.versebar.VerseBar")
+            .contains(where: { $0.processIdentifier < currentPID }) {
+            NSApp.terminate(nil)
+            return
+        }
+
         // Notification authorization is handled by the onboarding flow on
         // first launch. After that we no-op — the user already made a choice.
         if AppSettings.shared.hasCompletedOnboarding {
