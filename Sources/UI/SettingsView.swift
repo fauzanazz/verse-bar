@@ -76,6 +76,24 @@ struct SettingsView: View {
                         .background(Color.primary.opacity(0.03).cornerRadius(10))
                     }
                     
+                    // Integrations Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("INTEGRATIONS")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle("Show current track on Discord", isOn: $settings.discordPresenceEnabled)
+                            Text("Requires the Discord desktop app")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .toggleStyle(.checkbox)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                    }
+
                     // General Options Section
                     VStack(alignment: .leading, spacing: 12) {
                         Text("GENERAL OPTIONS")

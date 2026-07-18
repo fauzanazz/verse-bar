@@ -10,6 +10,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "VerseBar", path: "Sources"),
+        .testTarget(name: "VerseBarTests", dependencies: ["VerseBar"], path: "Tests"),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -30,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize the Music Island overlay (it is hidden until the user
         // enables the toggle in Preferences and something is playing).
         _ = NotchIslandController.shared
+        DiscordPresenceService.shared.start()
 
         // Observe window presentation requests
         NotificationCenter.default.addObserver(self, selector: #selector(showSettingsWindow), name: Notification.Name("ShowSettingsWindow"), object: nil)
@@ -47,6 +48,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Logger.info("Verse Bar application launched.", category: "general")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        DiscordPresenceService.shared.stop()
     }
 
     @objc func showOnboardingWindow() {

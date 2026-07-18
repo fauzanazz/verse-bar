@@ -60,6 +60,10 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(showRomanization, forKey: "showRomanization") }
     }
 
+    @Published var discordPresenceEnabled: Bool {
+        didSet { UserDefaults.standard.set(discordPresenceEnabled, forKey: "discordPresenceEnabled") }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             "showArtist": true,
@@ -74,7 +78,8 @@ class AppSettings: ObservableObject {
             "zenMode": true,
             "showNotchIsland": false,
             "hasCompletedOnboarding": false,
-            "showRomanization": true
+            "showRomanization": true,
+            "discordPresenceEnabled": false
         ])
 
         self.showArtist = UserDefaults.standard.bool(forKey: "showArtist")
@@ -93,6 +98,7 @@ class AppSettings: ObservableObject {
         self.showNotchIsland = UserDefaults.standard.bool(forKey: "showNotchIsland")
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         self.showRomanization = UserDefaults.standard.bool(forKey: "showRomanization")
+        self.discordPresenceEnabled = UserDefaults.standard.bool(forKey: "discordPresenceEnabled")
     }
 
     func manualSyncOffset(for track: Track) -> TimeInterval {

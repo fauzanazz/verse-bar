@@ -32,6 +32,7 @@ swiftc -sdk "$SDK_PATH" \
     Sources/Models/LyricLine.swift \
     Sources/Models/AppSettings.swift \
     Sources/Services/PlaybackEngine.swift \
+    Sources/Services/DiscordPresenceService.swift \
     Sources/Services/NowPlayingService.swift \
     Sources/Services/LyricsService.swift \
     Sources/Services/LyricsMetadataCache.swift \

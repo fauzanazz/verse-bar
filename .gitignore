@@ -4,6 +4,7 @@ VerseBar
 *.dSYM
 *.xcodeproj/
 build/
+.build/
 DerivedData/
 *.zip
 *.sha256
