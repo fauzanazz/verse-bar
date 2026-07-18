@@ -7,6 +7,7 @@ enum LyricsStatus: Equatable {
     case idle              // no track / not started
     case searching         // fetch in flight
     case found             // synced lyrics loaded
+    case plainFound        // full unsynced lyrics loaded
     case notFound          // no synced lyrics for this track
     case unavailableOffline
     case error             // network / parse failure
@@ -16,6 +17,7 @@ class LyricsService: ObservableObject {
     static let shared = LyricsService()
 
     @Published var lyricLines: [LyricLine] = []
+    @Published var plainLyrics: String?
     @Published var currentLineIndex: Int?
     @Published var isFetching = false
     @Published var offlineMode = false
@@ -29,6 +31,9 @@ class LyricsService: ObservableObject {
     
     private var lastTrackTitle = ""
     private var lastTrackArtist = ""
+    private lazy var metadataCache = LyricsMetadataCache(
+        databaseURL: cacheDirectory.appendingPathComponent("MetadataCache.sqlite3")
+    )
     
     private let cacheDirectory: URL
     
@@ -59,6 +64,7 @@ class LyricsService: ObservableObject {
     private func handleTrackChanged(_ track: Track?) {
         guard let track = track else {
             self.lyricLines = []
+            self.plainLyrics = nil
             self.currentLineIndex = nil
             self.status = .idle
             self.lastTrackTitle = ""
@@ -74,6 +80,7 @@ class LyricsService: ObservableObject {
         self.lastTrackTitle = track.title
         self.lastTrackArtist = track.artist
         self.lyricLines = []
+        self.plainLyrics = nil
         self.currentLineIndex = nil
         self.status = .searching
         
@@ -185,7 +192,23 @@ class LyricsService: ObservableObject {
                 return
             }
             
-            self.parseAndCacheResponse(data, track: track, cacheFile: cacheFile)
+            do {
+                let responseObj = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
+                if let syncedLyrics = responseObj.syncedLyrics, !syncedLyrics.isEmpty {
+                    self.parseAndCacheResponse(data, track: track, cacheFile: cacheFile)
+                } else {
+                    Logger.info("LRCLIB exact get had no synced lyrics, trying search fallback", category: "lyrics")
+                    DispatchQueue.main.async {
+                        self.fetchFallback(track: track)
+                    }
+                }
+            } catch {
+                Logger.error("Failed to decode LRCLIB exact response", category: "lyrics", error: error)
+                DispatchQueue.main.async {
+                    self.isFetching = false
+                    self.status = .error
+                }
+            }
         }.resume()
     }
     
@@ -215,16 +238,12 @@ class LyricsService: ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             
-            defer {
-                DispatchQueue.main.async {
-                    self.isFetching = false
-                }
-            }
             
             if error != nil {
                 DispatchQueue.main.async {
                     self.lyricLines = []
                     self.status = .error
+                    self.isFetching = false
                 }
                 return
             }
@@ -234,6 +253,7 @@ class LyricsService: ObservableObject {
                 DispatchQueue.main.async {
                     self.lyricLines = []
                     self.status = .notFound
+                    self.isFetching = false
                 }
                 return
             }
@@ -256,11 +276,17 @@ class LyricsService: ObservableObject {
                             }
                         }
                     }
+                } else if let query = self.coverFallbackQuery(for: track) {
+                    Logger.info("No synced lyrics found; trying cover fallback with query: \(query)", category: "lyrics")
+                    DispatchQueue.main.async {
+                        self.fetchCoverPlainLyrics(track: track, query: query)
+                    }
                 } else {
                     Logger.info("No synced lyrics found in search results", category: "lyrics")
                     DispatchQueue.main.async {
                         self.lyricLines = []
                         self.status = .notFound
+                        self.isFetching = false
                     }
                 }
             } catch {
@@ -268,11 +294,211 @@ class LyricsService: ObservableObject {
                 DispatchQueue.main.async {
                     self.lyricLines = []
                     self.status = .error
+                    self.isFetching = false
                 }
             }
         }.resume()
     }
     
+    private func coverFallbackQuery(for track: Track) -> String? {
+        let markers = ["cover", "acoustic", "karaoke", "live"]
+        let lowercasedTitle = track.title.lowercased()
+        guard track.title.contains("|") || markers.contains(where: lowercasedTitle.contains) else {
+            return nil
+        }
+
+        var query = String(track.title.split(separator: "|", maxSplits: 1).first ?? "")
+        let pattern = #"\([^)]*(?:cover|acoustic|karaoke|live)[^)]*\)|\[[^\]]*(?:cover|acoustic|karaoke|live)[^\]]*\]"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            query = regex.stringByReplacingMatches(
+                in: query,
+                range: NSRange(query.startIndex..., in: query),
+                withTemplate: ""
+            )
+        }
+        return query
+            .replacingOccurrences(of: " - ", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
+    private func fetchCoverPlainLyrics(track: Track, query: String, allowModelFallback: Bool = true) {
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "https://lrclib.net/api/search?q=\(encodedQuery)") else {
+            isFetching = false
+            status = .error
+            return
+        }
+
+        isFetching = true
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+
+            guard error == nil,
+                  let data = data,
+                  let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                if let error = error {
+                    Logger.error("Failed to fetch cover lyrics from LRCLIB", category: "lyrics", error: error)
+                }
+                DispatchQueue.main.async {
+                    guard self.isCurrentTrack(track) else { return }
+                    self.plainLyrics = nil
+                    self.lyricLines = []
+                    self.currentLineIndex = nil
+                    self.status = .error
+                    self.isFetching = false
+                }
+                return
+            }
+
+            do {
+                let results = try JSONDecoder().decode([LRCLIBResponse].self, from: data)
+                let plain = results
+                    .compactMap(\.plainLyrics)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .first(where: { !$0.isEmpty })
+
+                DispatchQueue.main.async {
+                    guard self.isCurrentTrack(track) else { return }
+                    if let plain = plain {
+                        self.plainLyrics = plain
+                        self.lyricLines = []
+                        self.currentLineIndex = nil
+                        self.status = .plainFound
+                        self.isFetching = false
+                        Logger.info("Loaded full cover lyrics: \(track.title)", category: "lyrics")
+                    } else if allowModelFallback {
+                        self.fetchModelNormalizedLyrics(track: track, previousQuery: query)
+                    } else {
+                        self.plainLyrics = nil
+                        self.lyricLines = []
+                        self.currentLineIndex = nil
+                        self.status = .notFound
+                        self.isFetching = false
+                    }
+                }
+            } catch {
+                Logger.error("Failed to decode cover lyrics search results", category: "lyrics", error: error)
+                DispatchQueue.main.async {
+                    guard self.isCurrentTrack(track) else { return }
+                    self.plainLyrics = nil
+                    self.lyricLines = []
+                    self.currentLineIndex = nil
+                    self.status = .error
+                    self.isFetching = false
+                }
+            }
+        }.resume()
+    }
+
+    private func fetchModelNormalizedLyrics(track: Track, previousQuery: String) {
+        if let cached = metadataCache.lookup(title: track.title, artist: track.artist) {
+            Logger.info(
+                cached.isFuzzyMatch ? "Using fuzzy metadata cache match: \(cached.query)" : "Using exact metadata cache match: \(cached.query)",
+                category: "lyrics"
+            )
+            if cached.query.caseInsensitiveCompare(previousQuery) == .orderedSame {
+                status = .notFound
+                isFetching = false
+            } else {
+                fetchCoverPlainLyrics(track: track, query: cached.query, allowModelFallback: false)
+            }
+            return
+        }
+
+        guard let url = URL(string: "http://127.0.0.1:11434/api/chat") else {
+            status = .notFound
+            isFetching = false
+            return
+        }
+
+        let prompt = """
+        Video title: \(track.title)
+        Channel: \(track.artist)
+        """
+        let body: [String: Any] = [
+            "model": "gpt-oss:120b-cloud",
+            "stream": false,
+            "think": false,
+            "format": "json",
+            "messages": [
+                [
+                    "role": "system",
+                    "content": "Extract original song metadata from a noisy cover video. Return one JSON object with exactly these keys: track, artist. No other keys or text. The channel is usually the uploader, not the artist."
+                ],
+                ["role": "user", "content": prompt]
+            ],
+            "options": ["temperature": 0]
+        ]
+
+        guard let requestData = try? JSONSerialization.data(withJSONObject: body) else {
+            status = .notFound
+            isFetching = false
+            return
+        }
+
+        Logger.info("Asking Ollama Cloud to normalize cover metadata: \(track.title)", category: "lyrics")
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "POST"
+        request.httpBody = requestData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+
+            do {
+                if let error = error { throw error }
+                guard let data = data,
+                      let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+
+                let chat = try JSONDecoder().decode(OllamaChatResponse.self, from: data)
+                let normalizedData = Data(chat.message.content.utf8)
+                let normalized = try JSONDecoder().decode(OllamaNormalizedTrack.self, from: normalizedData)
+                let artist = normalized.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = normalized.track.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !artist.isEmpty, !title.isEmpty else {
+                    throw URLError(.cannotParseResponse)
+                }
+                let query = "\(artist) \(title)"
+
+                DispatchQueue.main.async {
+                    guard self.isCurrentTrack(track) else { return }
+                    guard query.caseInsensitiveCompare(previousQuery) != .orderedSame else {
+                        self.status = .notFound
+                        self.isFetching = false
+                        return
+                    }
+                    self.metadataCache.store(
+                        sourceTitle: track.title,
+                        sourceArtist: track.artist,
+                        normalizedTrack: title,
+                        normalizedArtist: artist
+                    )
+                    Logger.info("Ollama normalized cover metadata: \(query)", category: "lyrics")
+                    self.fetchCoverPlainLyrics(track: track, query: query, allowModelFallback: false)
+                }
+            } catch {
+                Logger.error("Ollama cover metadata fallback failed", category: "lyrics", error: error)
+                DispatchQueue.main.async {
+                    guard self.isCurrentTrack(track) else { return }
+                    self.status = .notFound
+                    self.isFetching = false
+                }
+            }
+        }.resume()
+    }
+
+    private func isCurrentTrack(_ track: Track) -> Bool {
+        lastTrackTitle == track.title && lastTrackArtist == track.artist
+    }
+
     private func parseAndCacheResponse(_ data: Data, track: Track, cacheFile: URL) {
         do {
             let responseObj = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
@@ -390,6 +616,19 @@ struct LRCLIBResponse: Codable {
     let artistName: String?
     let syncedLyrics: String?  // Optional: may be null if only plain lyrics available
     let plainLyrics: String?   // Fallback plain text lyrics
+}
+
+private struct OllamaChatResponse: Decodable {
+    let message: OllamaChatMessage
+}
+
+private struct OllamaChatMessage: Decodable {
+    let content: String
+}
+
+private struct OllamaNormalizedTrack: Decodable {
+    let track: String
+    let artist: String
 }
 
 struct CachedLyricLine: Codable {

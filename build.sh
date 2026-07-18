@@ -34,6 +34,7 @@ swiftc -sdk "$SDK_PATH" \
     Sources/Services/PlaybackEngine.swift \
     Sources/Services/NowPlayingService.swift \
     Sources/Services/LyricsService.swift \
+    Sources/Services/LyricsMetadataCache.swift \
     Sources/Services/UpdateChecker.swift \
     Sources/UI/Components/GlassmorphicView.swift \
     Sources/UI/Components/MarqueeText.swift \

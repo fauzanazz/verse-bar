@@ -117,6 +117,20 @@ struct PopoverView: View {
                                     .foregroundColor(.secondary)
                             }
                             .frame(maxHeight: .infinity)
+                        } else if let plainLyrics = lyricsService.plainLyrics, !plainLyrics.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Full lyrics (unsynced)")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                ScrollView {
+                                    Text(plainLyrics)
+                                        .font(.system(size: 13, design: .rounded))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .multilineTextAlignment(.leading)
+                                        .textSelection(.enabled)
+                                        .padding(.vertical, 20)
+                                }
+                            }
                         } else if lyricsService.lyricLines.isEmpty {
                             VStack(spacing: 8) {
                                 Image(systemName: lyricsStatusIcon)
@@ -165,40 +179,42 @@ struct PopoverView: View {
                     
                     // Timing offset controls & source info
                     VStack(spacing: 6) {
-                        HStack {
-                            Text("Sync Offset:")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                        if lyricsService.plainLyrics == nil {
+                            HStack {
+                                Text("Sync Offset:")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                
+                                Spacer()
+                                
+                                Button(action: { settings.manualSyncOffset -= 0.5 }) {
+                                    Image(systemName: "minus.circle.fill")
+                                }
+                                .buttonStyle(.plain)
                                 .foregroundColor(.secondary)
-                            
-                            Spacer()
-                            
-                            Button(action: { settings.manualSyncOffset -= 0.5 }) {
-                                Image(systemName: "minus.circle.fill")
+                                
+                                Text(String(format: "%+.1fs", settings.manualSyncOffset))
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 48)
+                                
+                                Button(action: { settings.manualSyncOffset += 0.5 }) {
+                                    Image(systemName: "plus.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.secondary)
+                                
+                                Button("Reset") {
+                                    settings.manualSyncOffset = 0.0
+                                }
+                                .font(.system(size: 10, weight: .bold))
+                                .buttonStyle(.borderless)
+                                .padding(.leading, 6)
                             }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.secondary)
-                            
-                            Text(String(format: "%+.1fs", settings.manualSyncOffset))
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.primary)
-                                .frame(width: 48)
-                            
-                            Button(action: { settings.manualSyncOffset += 0.5 }) {
-                                Image(systemName: "plus.circle.fill")
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.secondary)
-                            
-                            Button("Reset") {
-                                settings.manualSyncOffset = 0.0
-                            }
-                            .font(.system(size: 10, weight: .bold))
-                            .buttonStyle(.borderless)
-                            .padding(.leading, 6)
                         }
                         
                         HStack {
-                            Text("Lyrics via LRCLIB")
+                            Text(lyricsService.plainLyrics == nil ? "Lyrics via LRCLIB" : "Full lyrics via LRCLIB")
                                 .font(.system(size: 10, design: .rounded))
                                 .foregroundColor(.secondary.opacity(0.7))
                             Spacer()

@@ -7,6 +7,7 @@ class StatusItemManager: NSObject {
     
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var lyricsWindow: NSWindow?
     
     private var playbackEngine = PlaybackEngine.shared
     private var lyricsService = LyricsService.shared
@@ -109,10 +110,49 @@ class StatusItemManager: NSObject {
             name: Notification.Name("ToggleVerseBarPopover"),
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(toggleLyricsWindow),
+            name: Notification.Name("ToggleVerseBarLyricsWindow"),
+            object: nil
+        )
     }
 
     @objc private func togglePopoverFromNotification() {
         togglePopover()
+    }
+
+    @objc private func toggleLyricsWindow() {
+        if let window = lyricsWindow {
+            if window.isVisible {
+                window.orderOut(nil)
+            } else {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Verse Bar"
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.minSize = NSSize(width: 320, height: 420)
+        window.contentViewController = NSHostingController(rootView: PopoverView())
+        if !window.setFrameUsingName("VerseBarLyricsWindow") {
+            window.center()
+        }
+        window.setFrameAutosaveName("VerseBarLyricsWindow")
+
+        lyricsWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     // Timer for smooth text transitions in the menu bar
@@ -218,7 +258,7 @@ class StatusItemManager: NSObject {
         //    the menu bar.
         if displayString.isEmpty && settings.showLyrics {
             switch lyricsService.status {
-            case .notFound, .unavailableOffline, .error:
+            case .plainFound, .notFound, .unavailableOffline, .error:
                 button.title = ""
                 return
             default:

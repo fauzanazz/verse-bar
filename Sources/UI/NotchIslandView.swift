@@ -63,6 +63,9 @@ struct NotchIslandView: View {
         }
         .animation(.easeInOut(duration: 0.16), value: isExpanded)
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onTapGesture {
+            NotificationCenter.default.post(name: Notification.Name("ToggleVerseBarLyricsWindow"), object: nil)
+        }
         .onHover { inside in
             onHoverChange(inside)
         }
