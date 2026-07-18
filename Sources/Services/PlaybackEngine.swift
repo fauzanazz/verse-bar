@@ -244,8 +244,8 @@ class PlaybackEngine: ObservableObject {
             return
         }
 
-        // YouTube-only gate: MediaRemote reports *any* media source (Spotify,
-        // Apple Music, a random site with audio, etc). We only want YouTube.
+        // MediaRemote reports every media source; accept supported desktop
+        // players directly and verify browser playback separately.
         let bundle = info.bundleIdentifier
 
         guard let bundle = bundle else {
@@ -254,7 +254,7 @@ class PlaybackEngine: ObservableObject {
             return
         }
 
-        if PlaybackEngine.isYouTubeDesktopBundle(bundle) {
+        if PlaybackEngine.isSupportedDesktopBundle(bundle) {
             acceptNowPlaying(info, artworkURL: nil, completion: completion)
             return
         }
@@ -277,8 +277,7 @@ class PlaybackEngine: ObservableObject {
             return
         }
 
-        // Known non-YouTube app (Spotify, Apple Music, podcast/video apps, …).
-        Logger.info("⏭️ Ignoring non-YouTube Now Playing source: \(bundle)", category: "playback")
+        Logger.info("⏭️ Ignoring unsupported Now Playing source: \(bundle)", category: "playback")
         completion(false)
     }
 
@@ -293,12 +292,13 @@ class PlaybackEngine: ObservableObject {
         }
     }
 
-    // MARK: - YouTube Source Classification
+    // MARK: - Playback Source Classification
 
-    /// True for the YouTube Music Desktop app (any known bundle-id variant).
-    private static func isYouTubeDesktopBundle(_ bundle: String) -> Bool {
+    static func isSupportedDesktopBundle(_ bundle: String) -> Bool {
         let b = bundle.lowercased()
-        return b.contains("youtube-music") || b.contains("ytmdesktop")
+        return b.contains("youtube-music")
+            || b.contains("ytmdesktop")
+            || b == "com.spotify.client"
     }
 
     /// Maps a Now Playing bundle id (possibly a renderer/helper process) to the

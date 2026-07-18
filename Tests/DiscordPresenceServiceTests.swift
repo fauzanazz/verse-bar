@@ -196,6 +196,13 @@ final class DiscordPresenceServiceTests: XCTestCase {
         )
     }
 
+    func testSupportedDesktopBundlesIncludeSpotify() {
+        XCTAssertTrue(PlaybackEngine.isSupportedDesktopBundle("com.spotify.client"))
+        XCTAssertTrue(PlaybackEngine.isSupportedDesktopBundle("com.spotify.Client"))
+        XCTAssertTrue(PlaybackEngine.isSupportedDesktopBundle("app.youtube-music"))
+        XCTAssertFalse(PlaybackEngine.isSupportedDesktopBundle("com.apple.Music"))
+    }
+
     func testYouTubeTrackMatchStates() {
         let candidates = [
             YouTubeTabCandidate(
