@@ -76,7 +76,7 @@ enum DiscordRPCPayload {
         try json(["v": 1, "client_id": clientID])
     }
 
-    static func activity(pid: Int32, title: String, artist: String, nonce: String) throws -> Data {
+    static func activity(pid: Int32, title: String, artist: String, artworkURL: URL?, nonce: String) throws -> Data {
         var activity: [String: Any] = [
             "type": 2,
             "status_display_type": 2,
@@ -85,6 +85,11 @@ enum DiscordRPCPayload {
         ]
         if let url = youtubeMusicSearchURL(title: title, artist: artist) {
             activity["buttons"] = [["label": "Play on YouTube Music", "url": url]]
+        }
+        if let artworkURL,
+           artworkURL.scheme?.lowercased() == "https",
+           artworkURL.host != nil {
+            activity["assets"] = ["large_image": artworkURL.absoluteString]
         }
         return try json([
             "cmd": "SET_ACTIVITY",
@@ -121,7 +126,7 @@ final class DiscordPresenceService {
     enum DesiredPresence: Equatable {
         case disabled
         case clear
-        case activity(title: String, artist: String)
+        case activity(title: String, artist: String, artworkURL: URL?)
     }
 
     private enum PendingCommand {
@@ -153,7 +158,7 @@ final class DiscordPresenceService {
     static func desiredPresence(enabled: Bool, track: Track?) -> DesiredPresence {
         guard enabled else { return .disabled }
         guard let track, !track.isPaused else { return .clear }
-        return .activity(title: track.title, artist: track.artist)
+        return .activity(title: track.title, artist: track.artist, artworkURL: track.artworkURL)
     }
 
     func start() {
@@ -431,7 +436,7 @@ final class DiscordPresenceService {
         switch desired {
         case .disabled, .clear:
             try sendClear()
-        case let .activity(title, artist):
+        case let .activity(title, artist, artworkURL):
             let nonce = UUID().uuidString
             pendingCommands[nonce] = .activity
             try enqueue(DiscordIPCFrame(
@@ -440,6 +445,7 @@ final class DiscordPresenceService {
                     pid: getpid(),
                     title: title,
                     artist: artist,
+                    artworkURL: artworkURL,
                     nonce: nonce
                 )
             ))

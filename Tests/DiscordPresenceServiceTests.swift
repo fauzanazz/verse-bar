@@ -47,6 +47,7 @@ final class DiscordPresenceServiceTests: XCTestCase {
             pid: 123,
             title: "Track title",
             artist: "Track artist",
+            artworkURL: nil,
             nonce: "activity-nonce"
         ))
         let args = try XCTUnwrap(payload["args"] as? [String: Any])
@@ -63,8 +64,28 @@ final class DiscordPresenceServiceTests: XCTestCase {
         XCTAssertEqual(buttons.count, 1)
         XCTAssertEqual(buttons[0]["label"], "Play on YouTube Music")
         XCTAssertEqual(buttons[0]["url"], "https://music.youtube.com/search?q=Track%20title%20Track%20artist")
+        XCTAssertNil(activity["assets"])
     }
 
+    func testActivityPayloadIncludesYouTubeArtworkURL() throws {
+        let artworkURL = URL(string: "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg")!
+        let data = try DiscordRPCPayload.activity(
+            pid: 123,
+            title: "Track title",
+            artist: "Track artist",
+            artworkURL: artworkURL,
+            nonce: "activity-nonce"
+        )
+        let payload = try jsonObject(data)
+        let args = try XCTUnwrap(payload["args"] as? [String: Any])
+        let activity = try XCTUnwrap(args["activity"] as? [String: Any])
+        let assets = try XCTUnwrap(activity["assets"] as? [String: String])
+
+        XCTAssertEqual(assets["large_image"], artworkURL.absoluteString)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("base64"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("artworkData"))
+
+    }
     func testClearPayloadOmitsActivity() throws {
         let payload = try jsonObject(DiscordRPCPayload.clear(pid: 456, nonce: "clear-nonce"))
         let args = try XCTUnwrap(payload["args"] as? [String: Any])
@@ -93,19 +114,110 @@ final class DiscordPresenceServiceTests: XCTestCase {
         XCTAssertEqual(DiscordPresenceService.desiredPresence(enabled: true, track: paused), .clear)
         XCTAssertEqual(
             DiscordPresenceService.desiredPresence(enabled: true, track: playing),
-            .activity(title: "Track title", artist: "Track artist")
+            .activity(title: "Track title", artist: "Track artist", artworkURL: nil)
         )
         XCTAssertEqual(
             DiscordPresenceService.desiredPresence(enabled: true, track: playing),
             DiscordPresenceService.desiredPresence(enabled: true, track: elapsedOnlyChange)
         )
+        let artworkChange = track(
+            elapsedTime: 10,
+            isPaused: false,
+            artworkURL: URL(string: "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg")
+        )
+        XCTAssertNotEqual(
+            DiscordPresenceService.desiredPresence(enabled: true, track: playing),
+            DiscordPresenceService.desiredPresence(enabled: true, track: artworkChange)
+        )
     }
 
+    func testYouTubeCandidateParsingDropsMalformedRows() {
+        let output = """
+        Track A - YouTube Music|||https://music.youtube.com/watch?v=BBpIV9A1PXc
+        malformed
+        FTP|||ftp://youtube.com/watch?v=BBpIV9A1PXc
+        Track B|||https://www.youtube.com/watch?v=dQw4w9WgXcQ
+        """
+
+        XCTAssertEqual(
+            YouTubeArtworkResolver.candidates(from: output),
+            [
+                YouTubeTabCandidate(
+                    title: "Track A - YouTube Music",
+                    url: URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
+                ),
+                YouTubeTabCandidate(
+                    title: "Track B",
+                    url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
+                )
+            ]
+        )
+    }
+
+    func testYouTubeVideoIDAndThumbnailValidation() {
+        let watchURL = URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc&list=RDAMVM")!
+        XCTAssertEqual(YouTubeArtworkResolver.videoID(from: watchURL), "BBpIV9A1PXc")
+        XCTAssertEqual(
+            YouTubeArtworkResolver.thumbnailURL(from: watchURL)?.absoluteString,
+            "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg"
+        )
+
+        [
+            "https://notyoutube.com/watch?v=BBpIV9A1PXc",
+            "https://youtube.com/embed/BBpIV9A1PXc",
+            "https://youtube.com/watch?list=RDAMVM",
+            "https://youtube.com/watch?v=too-short",
+            "https://youtube.com/watch?v=BBpIV9A1PX!"
+        ].forEach {
+            XCTAssertNil(YouTubeArtworkResolver.videoID(from: URL(string: $0)!))
+        }
+    }
+
+    func testYouTubeThumbnailSelectionUsesUniqueTitleMatch() {
+        let candidates = [
+            YouTubeTabCandidate(
+                title: "Other Song | YouTube",
+                url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
+            ),
+            YouTubeTabCandidate(
+                title: "Déjà Vu - YouTube Music",
+                url: URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
+            )
+        ]
+
+        XCTAssertEqual(
+            YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: "DEJA VU")?.absoluteString,
+            "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg"
+        )
+    }
+
+    func testYouTubeThumbnailSelectionFallsBackOnlyForOneWatchTab() {
+        let matchingURL = URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
+        XCTAssertEqual(
+            YouTubeArtworkResolver.selectThumbnailURL(
+                from: [YouTubeTabCandidate(title: "Unrelated", url: matchingURL)],
+                trackTitle: "Current track"
+            )?.absoluteString,
+            "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg"
+        )
+
+        XCTAssertNil(YouTubeArtworkResolver.selectThumbnailURL(
+            from: [
+                YouTubeTabCandidate(title: "Unrelated A", url: matchingURL),
+                YouTubeTabCandidate(
+                    title: "Unrelated B",
+                    url: URL(string: "https://youtube.com/watch?v=dQw4w9WgXcQ")!
+                )
+            ],
+            trackTitle: "Current track"
+        ))
+
+    }
     private func jsonObject(_ data: Data) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
-    private func track(elapsedTime: TimeInterval, isPaused: Bool) -> Track {
+    private func track(elapsedTime: TimeInterval, isPaused: Bool, artworkURL: URL? = nil) -> Track {
         Track(
             title: "Track title",
             artist: "Track artist",
@@ -113,7 +225,8 @@ final class DiscordPresenceServiceTests: XCTestCase {
             duration: 180,
             elapsedTime: elapsedTime,
             isPaused: isPaused,
-            lastUpdated: Date(timeIntervalSince1970: 0)
+            lastUpdated: Date(timeIntervalSince1970: 0),
+            artworkURL: artworkURL
         )
     }
 }

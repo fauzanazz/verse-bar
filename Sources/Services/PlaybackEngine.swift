@@ -3,6 +3,71 @@ import AppKit
 import Combine
 import UserNotifications
 
+struct YouTubeTabCandidate: Equatable {
+    let title: String
+    let url: URL
+}
+
+enum YouTubeArtworkResolver {
+    private static let supportedHosts = ["youtube.com", "www.youtube.com", "music.youtube.com"]
+    private static let titleSuffixes = [" - YouTube Music", " | YouTube Music", " - YouTube", " | YouTube"]
+    private static let videoIDCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+
+    static func candidates(from appleScriptOutput: String) -> [YouTubeTabCandidate] {
+        appleScriptOutput.split(whereSeparator: \.isNewline).compactMap { line in
+            let fields = line.components(separatedBy: "|||")
+            guard fields.count == 2,
+                  !fields[0].isEmpty,
+                  let url = URL(string: fields[1]),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https"
+            else { return nil }
+            return YouTubeTabCandidate(title: fields[0], url: url)
+        }
+    }
+
+    static func videoID(from watchURL: URL) -> String? {
+        guard let components = URLComponents(url: watchURL, resolvingAgainstBaseURL: false),
+              supportedHosts.contains(components.host?.lowercased() ?? ""),
+              components.path == "/watch",
+              let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value,
+              videoID.utf8.count == 11,
+              videoID.unicodeScalars.allSatisfy(videoIDCharacters.contains)
+        else { return nil }
+        return videoID
+    }
+
+    static func thumbnailURL(from watchURL: URL) -> URL? {
+        guard let videoID = videoID(from: watchURL) else { return nil }
+        return URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
+    }
+
+    static func selectThumbnailURL(from candidates: [YouTubeTabCandidate], trackTitle: String) -> URL? {
+        let watchCandidates = candidates.compactMap { candidate in
+            thumbnailURL(from: candidate.url).map { (candidate, $0) }
+        }
+        let foldedTrackTitle = normalizedTitle(trackTitle)
+        let matches = watchCandidates.filter {
+            let foldedTabTitle = normalizedTitle($0.0.title)
+            return !foldedTrackTitle.isEmpty
+                && (foldedTabTitle.contains(foldedTrackTitle) || foldedTrackTitle.contains(foldedTabTitle))
+        }
+        if matches.count == 1 {
+            return matches[0].1
+        }
+        return matches.isEmpty && watchCandidates.count == 1 ? watchCandidates[0].1 : nil
+    }
+
+    private static func normalizedTitle(_ title: String) -> String {
+        var title = title
+        if let suffix = titleSuffixes.first(where: { title.hasSuffix($0) }) {
+            title.removeLast(suffix.count)
+        }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+}
+
 class PlaybackEngine: ObservableObject {
     static let shared = PlaybackEngine()
     
@@ -172,29 +237,29 @@ class PlaybackEngine: ObservableObject {
             // PID symbol). Can't filter — degrade gracefully and accept rather
             // than hiding everything on those systems.
             Logger.info("⚠️ Now Playing source unknown (no bundle id) — accepting", category: "playback")
-            acceptNowPlaying(info, completion: completion)
+            acceptNowPlaying(info, artworkURL: nil, completion: completion)
             return
         }
 
         if PlaybackEngine.isYouTubeDesktopBundle(bundle) {
-            acceptNowPlaying(info, completion: completion)
+            acceptNowPlaying(info, artworkURL: nil, completion: completion)
             return
         }
 
         if let appName = PlaybackEngine.browserAppName(for: bundle) {
             // Browser source — only accept when a YouTube tab is actually open.
             // Guards against other websites (Netflix, SoundCloud, …) playing audio.
-            verifyYouTubeTab(inApp: appName) { [weak self] verdict in
+            verifyYouTubeTab(inApp: appName, trackTitle: info.title) { [weak self] verdict in
                 switch verdict {
-                case .youtube:
-                    self?.acceptNowPlaying(info, completion: completion)
+                case .youtube(let artworkURL):
+                    self?.acceptNowPlaying(info, artworkURL: artworkURL, completion: completion)
                 case .notYouTube:
                     Logger.info("⏭️ \(appName) Now Playing is not a YouTube tab — ignoring", category: "playback")
                     completion(false)
                 case .cannotVerify:
                     // Automation not granted / app not scriptable — degrade
                     // gracefully and accept rather than hiding a real track.
-                    self?.acceptNowPlaying(info, completion: completion)
+                    self?.acceptNowPlaying(info, artworkURL: nil, completion: completion)
                 }
             }
             return
@@ -205,13 +270,13 @@ class PlaybackEngine: ObservableObject {
         completion(false)
     }
 
-    private func acceptNowPlaying(_ info: NowPlayingInfo, completion: @escaping (Bool) -> Void) {
+    private func acceptNowPlaying(_ info: NowPlayingInfo, artworkURL: URL?, completion: @escaping (Bool) -> Void) {
         let title = info.title
         let artist = info.artist.isEmpty ? "Unknown Artist" : info.artist
         let duration = info.duration > 0 ? info.duration : 300.0
         Logger.info("🎵 Detected (NowPlaying): \(title) - \(artist) [\(String(format: "%.1f", info.elapsed))/\(String(format: "%.0f", duration))s] paused=\(info.isPaused)", category: "playback")
         DispatchQueue.main.async {
-            self.updateTrack(title: title, artist: artist, duration: duration, elapsed: info.elapsed, isPaused: info.isPaused, isEstimatedProgress: false, artworkData: info.artworkData, artworkId: info.artworkId)
+            self.updateTrack(title: title, artist: artist, duration: duration, elapsed: info.elapsed, isPaused: info.isPaused, isEstimatedProgress: false, artworkData: info.artworkData, artworkId: info.artworkId, artworkURL: artworkURL)
             completion(true)
         }
     }
@@ -241,29 +306,39 @@ class PlaybackEngine: ObservableObject {
         return nil
     }
 
-    private enum YouTubeTabVerdict { case youtube, notYouTube, cannotVerify }
+    private enum YouTubeTabVerdict { case youtube(URL?), notYouTube, cannotVerify }
 
-    /// Reads tab URLs (no JS execution → no suspended-tab hang) of the given
-    /// browser to confirm a YouTube tab is open before trusting MediaRemote.
-    private func verifyYouTubeTab(inApp appName: String, completion: @escaping (YouTubeTabVerdict) -> Void) {
+    /// Reads tab titles and URLs (no JS execution → no suspended-tab hang) of
+    /// the given browser before trusting MediaRemote.
+    private func verifyYouTubeTab(inApp appName: String, trackTitle: String, completion: @escaping (YouTubeTabVerdict) -> Void) {
+        let titleProperty = appName == "Safari" ? "name" : "title"
         let script = """
+        set matches to ""
         tell application "\(appName)"
             repeat with w in windows
                 try
                     repeat with t in tabs of w
                         try
-                            if (URL of t) contains "youtube.com" then return "YT"
+                            set tabURL to URL of t
+                            if tabURL contains "youtube.com" then
+                                set tabTitle to \(titleProperty) of t
+                                if matches is not "" then set matches to matches & linefeed
+                                set matches to matches & tabTitle & "|||" & tabURL
+                            end if
                         end try
                     end repeat
                 end try
             end repeat
         end tell
-        return "NO"
+        return matches
         """
         AppleScriptRunner.run(script, timeout: 2.0) { result in
             switch result {
             case .success(let out):
-                completion(out.contains("YT") ? .youtube : .notYouTube)
+                let candidates = YouTubeArtworkResolver.candidates(from: out)
+                completion(candidates.isEmpty
+                    ? .notYouTube
+                    : .youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
             case .failure:
                 completion(.cannotVerify)
             }
@@ -337,21 +412,21 @@ class PlaybackEngine: ObservableObject {
                                 try
                                     set result to execute t javascript "\(escapedJS)"
                                     if result is not "" then
-                                        return "YTM|||" & result
+                                        return "YTM|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to title of t
-                                    return "TITLE|||" & tabTitle
+                                    return "TITLE|||" & tabTitle & "|||" & tabURL
                                 end try
                             else if tabURL contains "youtube.com/watch" then
                                 try
                                     set result to execute t javascript "\(escapedYTJS)"
                                     if result is not "" then
-                                        return "YT|||" & result
+                                        return "YT|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to title of t
-                                    return "TITLE|||" & tabTitle
+                                    return "TITLE|||" & tabTitle & "|||" & tabURL
                                 end try
                             end if
                         end try
@@ -384,21 +459,21 @@ class PlaybackEngine: ObservableObject {
                                 try
                                     set result to execute t javascript "\(escapedJS)"
                                     if result is not "" then
-                                        return "YTM|||" & result
+                                        return "YTM|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to title of t
-                                    return "TITLE|||" & tabTitle
+                                    return "TITLE|||" & tabTitle & "|||" & tabURL
                                 end try
                             else if tabURL contains "youtube.com/watch" then
                                 try
                                     set result to execute t javascript "\(escapedYTJS)"
                                     if result is not "" then
-                                        return "YT|||" & result
+                                        return "YT|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to title of t
-                                    return "TITLE|||" & tabTitle
+                                    return "TITLE|||" & tabTitle & "|||" & tabURL
                                 end try
                             end if
                         end try
@@ -431,21 +506,21 @@ class PlaybackEngine: ObservableObject {
                                 try
                                     set result to do JavaScript "\(escapedJS)" in t
                                     if result is not "" then
-                                        return "YTM|||" & result
+                                        return "YTM|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to name of t
-                                    return "TITLE|||" & tabTitle
+                                    return "TITLE|||" & tabTitle & "|||" & tabURL
                                 end try
                             else if tabURL contains "youtube.com/watch" then
                                 try
                                     set result to do JavaScript "\(escapedYTJS)" in t
                                     if result is not "" then
-                                        return "YT|||" & result
+                                        return "YT|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to name of t
-                                    return "TITLE|||" & tabTitle
+                                    return "TITLE|||" & tabTitle & "|||" & tabURL
                                 end try
                             end if
                         end try
@@ -496,6 +571,10 @@ class PlaybackEngine: ObservableObject {
                 let elapsedStr = parts[2].trimmingCharacters(in: .whitespacesAndNewlines)
                 let durationStr = parts[3].trimmingCharacters(in: .whitespacesAndNewlines)
                 let isPausedStr = parts[4].trimmingCharacters(in: .whitespacesAndNewlines)
+                let artworkURL = parts.count > 5
+                    ? URL(string: parts[5].trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\""))))
+                        .flatMap(YouTubeArtworkResolver.thumbnailURL(from:))
+                    : nil
                 
                 // Strip wrapping quotes from AppleScript output
                 title = title.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
@@ -519,13 +598,18 @@ class PlaybackEngine: ObservableObject {
                 Logger.info("🎵 Detected: \(title) - \(artist) [\(String(format: "%.1f", elapsed))/\(String(format: "%.0f", duration))s] paused=\(isPaused)", category: "playback")
                 
                 DispatchQueue.main.async {
-                    self.updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed, isPaused: isPaused, isEstimatedProgress: false)
+                    self.updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed, isPaused: isPaused, isEstimatedProgress: false, artworkURL: artworkURL)
                     completion(true)
                 }
                 
             } else if trimmed.hasPrefix("TITLE|||") {
                 // Fallback to tab title parsing
-                let tabTitle = String(trimmed.dropFirst("TITLE|||".count))
+                let fallbackParts = String(trimmed.dropFirst("TITLE|||".count)).components(separatedBy: "|||")
+                let tabTitle = fallbackParts[0]
+                let artworkURL = fallbackParts.count > 1
+                    ? URL(string: fallbackParts[1].trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\""))))
+                        .flatMap(YouTubeArtworkResolver.thumbnailURL(from:))
+                    : nil
                 let cleaned = cleanTrackTitle(tabTitle)
                 
                 let (title, artist) = parseTabTitle(cleaned)
@@ -538,7 +622,7 @@ class PlaybackEngine: ObservableObject {
                 Logger.info("🎵 Detected (title fallback): \(title) - \(artist)", category: "playback")
                 
                 DispatchQueue.main.async {
-                    self.updateTrack(title: title, artist: artist, duration: 300.0, elapsed: 0.0, isPaused: false, isEstimatedProgress: true)
+                    self.updateTrack(title: title, artist: artist, duration: 300.0, elapsed: 0.0, isPaused: false, isEstimatedProgress: true, artworkURL: artworkURL)
                     completion(true)
                 }
             } else {
@@ -583,13 +667,14 @@ class PlaybackEngine: ObservableObject {
     }
     
     // MARK: - Track State Management
-    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double, isPaused: Bool, isEstimatedProgress: Bool, artworkData: Data? = nil, artworkId: String? = nil) {
+    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double, isPaused: Bool, isEstimatedProgress: Bool, artworkData: Data? = nil, artworkId: String? = nil, artworkURL: URL? = nil) {
         let now = Date()
         if let current = currentTrack, current.title == title, current.artist == artist {
             var updated = current
             updated.isPaused = isPaused
             updated.duration = duration
             updated.isEstimatedProgress = isEstimatedProgress
+            updated.artworkURL = artworkURL
             // Only overwrite artwork when source provides one — keeps existing
             // art across polls where the helper omits it.
             if let data = artworkData {
@@ -620,6 +705,7 @@ class PlaybackEngine: ObservableObject {
             var newTrack = Track(title: title, artist: artist, syncOffsetKey: Track.makeSyncOffsetKey(title: title, artist: artist), duration: duration, elapsedTime: elapsed, isPaused: isPaused, lastUpdated: now, isEstimatedProgress: isEstimatedProgress)
             newTrack.artworkData = artworkData
             newTrack.artworkId = artworkId
+            newTrack.artworkURL = artworkURL
             currentTrack = newTrack
             Logger.info("🎵 Track Changed: \(title) - \(artist) (Duration: \(duration)s)", category: "playback")
             triggerNotification(for: newTrack)
