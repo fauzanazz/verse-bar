@@ -1,10 +1,15 @@
 import SwiftUI
 
+private struct ManualLyricsSearchContext: Identifiable {
+    let id = UUID()
+    let track: Track
+}
+
 struct PopoverView: View {
     @ObservedObject private var playbackEngine = PlaybackEngine.shared
     @ObservedObject private var lyricsService = LyricsService.shared
     @ObservedObject private var settings = AppSettings.shared
-    @State private var showingManualSearch = false
+    @State private var manualSearchContext: ManualLyricsSearchContext?
     private let isWindowed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -29,12 +34,8 @@ struct PopoverView: View {
             minHeight: settings.zenMode ? 120 : 300,
             idealHeight: settings.zenMode ? 180 : 380
         )
-        .sheet(isPresented: $showingManualSearch) {
-            ManualLyricsSearchView(
-                initialQuery: [playbackEngine.currentTrack?.title, playbackEngine.currentTrack?.artist]
-                    .compactMap { $0 }
-                    .joined(separator: " ")
-            )
+        .sheet(item: $manualSearchContext) { context in
+            ManualLyricsSearchView(track: context.track)
         }
     }
 
@@ -81,6 +82,16 @@ struct PopoverView: View {
 
             Spacer(minLength: 8)
 
+            if playbackEngine.currentTrack != nil {
+                Button(action: chooseDifferentLyrics) {
+                    Image(systemName: "magnifyingglass")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .disabled(lyricsService.isFetching)
+                .help("Choose different lyrics")
+                .accessibilityLabel("Choose different lyrics")
+            }
             pinButton
             modeButton
         }
@@ -111,6 +122,11 @@ struct PopoverView: View {
         .buttonStyle(.plain)
         .foregroundColor(.secondary)
         .help(settings.zenMode ? "Switch to Normal Mode" : "Switch to Zen Mode")
+    }
+
+    private func chooseDifferentLyrics() {
+        guard let track = playbackEngine.currentTrack else { return }
+        manualSearchContext = ManualLyricsSearchContext(track: track)
     }
 
     private func trackPanel(_ track: Track) -> some View {
@@ -268,9 +284,7 @@ struct PopoverView: View {
             statusText(lyricsStatusMessage, scale: scale)
 
             if canSearchManually {
-                Button("Search lyrics manually") {
-                    showingManualSearch = true
-                }
+                Button("Search lyrics manually", action: chooseDifferentLyrics)
                 .buttonStyle(.borderedProminent)
                 .controlSize(scale >= 1.5 ? .regular : .small)
             }
@@ -314,12 +328,13 @@ private struct ManualLyricsSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var lyricsService = LyricsService.shared
 
-    let initialQuery: String
+    let track: Track
 
     @State private var query = ""
     @State private var results: [LRCLIBResponse] = []
     @State private var isSearching = false
     @State private var message: String?
+    @State private var selectionError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -334,6 +349,12 @@ private struct ManualLyricsSearchView: View {
                 Button("Search", action: search)
                     .buttonStyle(.borderedProminent)
                     .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
+            }
+
+            if let selectionError {
+                Text(selectionError)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
             }
 
             if isSearching {
@@ -362,13 +383,24 @@ private struct ManualLyricsSearchView: View {
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                 }
+                                if let duration = formattedDuration(result.duration) {
+                                    Text(duration)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
                             }
 
                             Spacer()
 
-                            Button("Use") {
-                                lyricsService.useSearchResult(result)
-                                dismiss()
+                            Button("Use lyrics") {
+                                do {
+                                    try lyricsService.useSearchResult(result, for: track)
+                                    dismiss()
+                                } catch LyricsSelectionError.trackChanged {
+                                    selectionError = "The track changed. Reopen search for the current song."
+                                } catch {
+                                    selectionError = "Couldn’t save these lyrics. Try again."
+                                }
                             }
                             .controlSize(.small)
                         }
@@ -381,9 +413,15 @@ private struct ManualLyricsSearchView: View {
         .padding(16)
         .frame(width: 440, height: 360)
         .onAppear {
-            query = initialQuery
+            query = "\(track.title) \(track.artist)"
             search()
         }
+    }
+
+    private func formattedDuration(_ duration: Double?) -> String? {
+        guard let duration, duration > 0 else { return nil }
+        let seconds = Int(duration)
+        return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
     }
 
     private func search() {
@@ -392,12 +430,14 @@ private struct ManualLyricsSearchView: View {
 
         isSearching = true
         message = nil
+        selectionError = nil
         lyricsService.searchLyrics(matching: query) { result in
             isSearching = false
             switch result {
             case .success(let matches):
                 results = matches.filter {
-                    !($0.syncedLyrics?.isEmpty ?? true) || !($0.plainLyrics?.isEmpty ?? true)
+                    !($0.syncedLyrics?.isEmpty ?? true)
+                        || !($0.plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                 }
                 message = results.isEmpty ? "No lyrics found. Try a different title or artist." : nil
             case .failure:

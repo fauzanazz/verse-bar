@@ -13,6 +13,11 @@ enum LyricsStatus: Equatable {
     case error             // network / parse failure
 }
 
+enum LyricsSelectionError: Error {
+    case trackChanged
+    case unusableResult
+}
+
 class LyricsService: ObservableObject {
     static let shared = LyricsService()
 
@@ -124,6 +129,22 @@ class LyricsService: ObservableObject {
     private func fetchLyrics(for track: Track) {
         let slug = getCacheSlug(artist: track.artist, title: track.title)
         let cacheFile = cacheDirectory.appendingPathComponent("\(slug).json")
+
+        let manualFile = manualSelectionFile(for: track)
+        if FileManager.default.fileExists(atPath: manualFile.path) {
+            do {
+                let data = try Data(contentsOf: manualFile)
+                let result = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
+                guard hasUsableLyrics(result) else {
+                    throw LyricsSelectionError.unusableResult
+                }
+                _ = applySearchResult(result, for: track)
+                Logger.info("Loaded manually selected lyrics for \(track.title)", category: "lyrics")
+                return
+            } catch {
+                Logger.error("Failed to load manually selected lyrics", category: "lyrics", error: error)
+            }
+        }
         
         // Try Cache first
         if FileManager.default.fileExists(atPath: cacheFile.path) {
@@ -385,7 +406,7 @@ class LyricsService: ObservableObject {
                 DispatchQueue.main.async {
                     guard self.isCurrentTrack(track) else { return }
                     if let result {
-                        self.useSearchResult(result)
+                        _ = self.applySearchResult(result, for: track)
                         Logger.info("Loaded cover lyrics: \(track.title)", category: "lyrics")
                     } else if allowModelFallback {
                         self.fetchModelNormalizedLyrics(track: track, previousQuery: query)
@@ -557,42 +578,50 @@ class LyricsService: ObservableObject {
         }.resume()
     }
 
-    func useSearchResult(_ result: LRCLIBResponse) {
-        guard let track = playbackEngine.currentTrack else { return }
-
-        isFetching = false
-        currentLineIndex = nil
-
+    private func applySearchResult(_ result: LRCLIBResponse, for track: Track) -> Bool {
         if let syncedLyrics = result.syncedLyrics {
             let parsedLines = parseLRC(syncedLyrics)
             if !parsedLines.isEmpty {
+                isFetching = false
                 lyricLines = parsedLines
                 plainLyrics = nil
                 status = .found
-
-                let cacheFile = cacheDirectory.appendingPathComponent(
-                    "\(getCacheSlug(artist: track.artist, title: track.title)).json"
-                )
-                let cachedLines = parsedLines.map {
-                    CachedLyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized)
-                }
-                if let cacheData = try? JSONEncoder().encode(cachedLines) {
-                    try? cacheData.write(to: cacheFile)
-                }
-                return
+                updateActiveLyricIndex()
+                return true
             }
         }
 
         if let plainLyrics = result.plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines),
            !plainLyrics.isEmpty {
+            isFetching = false
             lyricLines = []
+            currentLineIndex = nil
             self.plainLyrics = plainLyrics
             status = .plainFound
-        } else {
-            lyricLines = []
-            plainLyrics = nil
-            status = .notFound
+            return true
         }
+
+        return false
+    }
+
+    private func hasUsableLyrics(_ result: LRCLIBResponse) -> Bool {
+        if let syncedLyrics = result.syncedLyrics, !parseLRC(syncedLyrics).isEmpty {
+            return true
+        }
+        return !(result.plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    func useSearchResult(_ result: LRCLIBResponse, for track: Track) throws {
+        guard playbackEngine.currentTrack?.syncOffsetKey == track.syncOffsetKey else {
+            throw LyricsSelectionError.trackChanged
+        }
+        guard hasUsableLyrics(result) else {
+            throw LyricsSelectionError.unusableResult
+        }
+
+        let data = try JSONEncoder().encode(result)
+        try data.write(to: manualSelectionFile(for: track), options: .atomic)
+        _ = applySearchResult(result, for: track)
     }
 
     private func parseAndCacheResponse(_ data: Data, track: Track, cacheFile: URL) {
@@ -698,6 +727,12 @@ class LyricsService: ObservableObject {
         return out.isEmpty || out == text ? nil : out
     }
     
+    private func manualSelectionFile(for track: Track) -> URL {
+        cacheDirectory.appendingPathComponent(
+            "\(getCacheSlug(artist: track.artist, title: track.title)).manual.json"
+        )
+    }
+
     private func getCacheSlug(artist: String, title: String) -> String {
         let combined = "\(artist.lowercased())_\(title.lowercased())"
         let allowed = CharacterSet.alphanumerics
