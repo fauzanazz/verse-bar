@@ -232,29 +232,30 @@ class LyricsService: ObservableObject {
         
         self.isFetching = true
         
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             
             
-            if error != nil {
-                DispatchQueue.main.async {
-                    self.lyricLines = []
-                    self.status = .error
-                    self.isFetching = false
-                }
+            if let error = error {
+                self.handleSearchFallbackFailure(
+                    track: track,
+                    message: "LRCLIB search fallback request failed",
+                    error: error
+                )
                 return
             }
 
             guard let data = data,
-                  let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                DispatchQueue.main.async {
-                    self.lyricLines = []
-                    self.status = .notFound
-                    self.isFetching = false
-                }
+                  let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                self.handleSearchFallbackFailure(
+                    track: track,
+                    message: "LRCLIB search fallback returned status \(statusCode)"
+                )
                 return
             }
             
@@ -290,14 +291,36 @@ class LyricsService: ObservableObject {
                     }
                 }
             } catch {
-                Logger.error("Failed to decode search results", category: "lyrics", error: error)
-                DispatchQueue.main.async {
-                    self.lyricLines = []
-                    self.status = .error
-                    self.isFetching = false
-                }
+                self.handleSearchFallbackFailure(
+                    track: track,
+                    message: "Failed to decode LRCLIB search fallback",
+                    error: error
+                )
             }
         }.resume()
+    }
+
+    private func handleSearchFallbackFailure(
+        track: Track,
+        message: String,
+        error: Error? = nil,
+        allowModelFallback: Bool = true
+    ) {
+        Logger.error(message, category: "lyrics", error: error)
+        DispatchQueue.main.async {
+            guard self.isCurrentTrack(track) else { return }
+            self.plainLyrics = nil
+            self.lyricLines = []
+            self.currentLineIndex = nil
+
+            if allowModelFallback, let query = self.coverFallbackQuery(for: track) {
+                Logger.info("LRCLIB search fallback failed; trying model normalization", category: "lyrics")
+                self.fetchModelNormalizedLyrics(track: track, previousQuery: query)
+            } else {
+                self.status = .error
+                self.isFetching = false
+            }
+        }
     }
     
     private func coverFallbackQuery(for track: Track) -> String? {
@@ -341,17 +364,13 @@ class LyricsService: ObservableObject {
                   let data = data,
                   let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                if let error = error {
-                    Logger.error("Failed to fetch cover lyrics from LRCLIB", category: "lyrics", error: error)
-                }
-                DispatchQueue.main.async {
-                    guard self.isCurrentTrack(track) else { return }
-                    self.plainLyrics = nil
-                    self.lyricLines = []
-                    self.currentLineIndex = nil
-                    self.status = .error
-                    self.isFetching = false
-                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                self.handleSearchFallbackFailure(
+                    track: track,
+                    message: "Cover lyrics search returned status \(statusCode)",
+                    error: error,
+                    allowModelFallback: allowModelFallback
+                )
                 return
             }
 
@@ -382,15 +401,12 @@ class LyricsService: ObservableObject {
                     }
                 }
             } catch {
-                Logger.error("Failed to decode cover lyrics search results", category: "lyrics", error: error)
-                DispatchQueue.main.async {
-                    guard self.isCurrentTrack(track) else { return }
-                    self.plainLyrics = nil
-                    self.lyricLines = []
-                    self.currentLineIndex = nil
-                    self.status = .error
-                    self.isFetching = false
-                }
+                self.handleSearchFallbackFailure(
+                    track: track,
+                    message: "Failed to decode cover lyrics search results",
+                    error: error,
+                    allowModelFallback: allowModelFallback
+                )
             }
         }.resume()
     }
