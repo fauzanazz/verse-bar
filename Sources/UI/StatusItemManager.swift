@@ -46,7 +46,7 @@ class StatusItemManager: NSObject {
     
     private func setupPopover() {
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 420)
+        applyPopoverSize()
         applyPopoverBehavior()
 
         // PopoverHostingController vends an NSTouchBar so the lyric appears in the
@@ -60,6 +60,11 @@ class StatusItemManager: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyPopoverBehavior() }
             .store(in: &cancellables)
+
+        settings.$zenMode
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applyPopoverSize() }
+            .store(in: &cancellables)
     }
 
     private func applyPopoverBehavior() {
@@ -67,6 +72,17 @@ class StatusItemManager: NSObject {
         // required for the Touch Bar lyric to remain visible while you work
         // in another app. .transient is the standard menu-bar-app behavior.
         popover.behavior = settings.pinPopover ? .applicationDefined : .transient
+    }
+
+    private func applyPopoverSize() {
+        let size = settings.zenMode
+            ? NSSize(width: 300, height: 180)
+            : NSSize(width: 320, height: 420)
+        popover.contentSize = size
+        lyricsWindow?.setContentSize(size)
+        lyricsWindow?.minSize = settings.zenMode
+            ? NSSize(width: 280, height: 140)
+            : NSSize(width: 320, height: 420)
     }
     
     private func setupBindings() {
@@ -134,8 +150,12 @@ class StatusItemManager: NSObject {
             return
         }
 
+        let size = settings.zenMode
+            ? NSSize(width: 300, height: 180)
+            : NSSize(width: 320, height: 420)
+
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 500),
+            contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -143,7 +163,9 @@ class StatusItemManager: NSObject {
         window.title = "Verse Bar"
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.minSize = NSSize(width: 320, height: 420)
+        window.minSize = settings.zenMode
+            ? NSSize(width: 280, height: 140)
+            : NSSize(width: 320, height: 420)
         window.contentViewController = NSHostingController(rootView: PopoverView())
         if !window.setFrameUsingName("VerseBarLyricsWindow") {
             window.center()
@@ -185,6 +207,14 @@ class StatusItemManager: NSObject {
     
     private func showContextMenu() {
         let menu = NSMenu()
+        let modeItem = NSMenuItem(
+            title: settings.zenMode ? "Switch to Normal Mode" : "Switch to Zen Mode",
+            action: #selector(toggleZenMode),
+            keyEquivalent: ""
+        )
+        modeItem.target = self
+        menu.addItem(modeItem)
+
 
         let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(openSettings), keyEquivalent: ",")
         prefsItem.target = self
@@ -203,6 +233,10 @@ class StatusItemManager: NSObject {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil // Reset so next left-click opens popover
+    }
+
+    @objc private func toggleZenMode() {
+        settings.zenMode.toggle()
     }
 
     private func updateMenuItemTitle() -> String {

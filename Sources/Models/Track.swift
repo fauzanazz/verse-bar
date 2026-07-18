@@ -3,6 +3,7 @@ import Foundation
 struct Track: Equatable {
     let title: String
     let artist: String
+    let syncOffsetKey: String
     var duration: TimeInterval
     var elapsedTime: TimeInterval
     var isPaused: Bool
@@ -21,6 +22,16 @@ struct Track: Equatable {
         }
     }
     
+    static func makeSyncOffsetKey(title: String, artist: String) -> String {
+        let normalizedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+        return "\(normalizedArtist.count):\(normalizedArtist)\(normalizedTitle)"
+    }
+
     static func == (lhs: Track, rhs: Track) -> Bool {
         return lhs.title == rhs.title &&
                lhs.artist == rhs.artist &&

@@ -36,12 +36,16 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(trackingArc, forKey: "trackingArc") }
     }
     
-    @Published var manualSyncOffset: TimeInterval {
-        didSet { UserDefaults.standard.set(manualSyncOffset, forKey: "manualSyncOffset") }
+    @Published private var manualSyncOffsetsByTrack: [String: TimeInterval] {
+        didSet { UserDefaults.standard.set(manualSyncOffsetsByTrack, forKey: "manualSyncOffsetsByTrack") }
     }
 
     @Published var pinPopover: Bool {
         didSet { UserDefaults.standard.set(pinPopover, forKey: "pinPopover") }
+    }
+
+    @Published var zenMode: Bool {
+        didSet { UserDefaults.standard.set(zenMode, forKey: "zenMode") }
     }
 
     @Published var showNotchIsland: Bool {
@@ -66,8 +70,8 @@ class AppSettings: ObservableObject {
             "trackingChrome": true,
             "trackingArc": true,
             "trackingYTMDesktop": true,
-            "manualSyncOffset": 0.0,
             "pinPopover": false,
+            "zenMode": true,
             "showNotchIsland": false,
             "hasCompletedOnboarding": false,
             "showRomanization": true
@@ -81,10 +85,25 @@ class AppSettings: ObservableObject {
         self.trackingChrome = UserDefaults.standard.bool(forKey: "trackingChrome")
         self.trackingArc = UserDefaults.standard.bool(forKey: "trackingArc")
         self.trackingYTMDesktop = UserDefaults.standard.bool(forKey: "trackingYTMDesktop")
-        self.manualSyncOffset = UserDefaults.standard.double(forKey: "manualSyncOffset")
+        self.manualSyncOffsetsByTrack = UserDefaults.standard.dictionary(forKey: "manualSyncOffsetsByTrack")?
+            .compactMapValues { ($0 as? NSNumber)?.doubleValue } ?? [:]
+        UserDefaults.standard.removeObject(forKey: "manualSyncOffset")
         self.pinPopover = UserDefaults.standard.bool(forKey: "pinPopover")
+        self.zenMode = UserDefaults.standard.bool(forKey: "zenMode")
         self.showNotchIsland = UserDefaults.standard.bool(forKey: "showNotchIsland")
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         self.showRomanization = UserDefaults.standard.bool(forKey: "showRomanization")
+    }
+
+    func manualSyncOffset(for track: Track) -> TimeInterval {
+        manualSyncOffsetsByTrack[track.syncOffsetKey] ?? 0.0
+    }
+
+    func setManualSyncOffset(_ offset: TimeInterval, for track: Track) {
+        if offset == 0.0 {
+            manualSyncOffsetsByTrack.removeValue(forKey: track.syncOffsetKey)
+        } else {
+            manualSyncOffsetsByTrack[track.syncOffsetKey] = offset
+        }
     }
 }

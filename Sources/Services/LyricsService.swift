@@ -103,7 +103,7 @@ class LyricsService: ObservableObject {
             return
         }
         
-        let elapsed = track.currentProgress + AppSettings.shared.manualSyncOffset
+        let elapsed = track.currentProgress + AppSettings.shared.manualSyncOffset(for: track)
         
         // Find current line (last line whose timestamp <= elapsed)
         var foundIndex: Int?
@@ -515,6 +515,89 @@ class LyricsService: ObservableObject {
         lastTrackTitle == track.title && lastTrackArtist == track.artist
     }
 
+    func searchLyrics(
+        matching query: String,
+        completion: @escaping (Result<[LRCLIBResponse], Error>) -> Void
+    ) {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            completion(.success([]))
+            return
+        }
+
+        var components = URLComponents(string: "https://lrclib.net/api/search")
+        components?.queryItems = [URLQueryItem(name: "q", value: query)]
+        guard let url = components?.url else {
+            completion(.failure(URLError(.badURL)))
+            return
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue(
+            "VerseBar/1.0 (https://github.com/antikode/verse-bar)",
+            forHTTPHeaderField: "User-Agent"
+        )
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            let result: Result<[LRCLIBResponse], Error>
+            if let error {
+                result = .failure(error)
+            } else if let response = response as? HTTPURLResponse, response.statusCode != 200 {
+                result = .failure(URLError(.badServerResponse))
+            } else if let data {
+                do {
+                    result = .success(try JSONDecoder().decode([LRCLIBResponse].self, from: data))
+                } catch {
+                    result = .failure(error)
+                }
+            } else {
+                result = .failure(URLError(.zeroByteResource))
+            }
+
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }.resume()
+    }
+
+    func useSearchResult(_ result: LRCLIBResponse) {
+        guard let track = playbackEngine.currentTrack else { return }
+
+        isFetching = false
+        currentLineIndex = nil
+
+        if let syncedLyrics = result.syncedLyrics {
+            let parsedLines = parseLRC(syncedLyrics)
+            if !parsedLines.isEmpty {
+                lyricLines = parsedLines
+                plainLyrics = nil
+                status = .found
+
+                let cacheFile = cacheDirectory.appendingPathComponent(
+                    "\(getCacheSlug(artist: track.artist, title: track.title)).json"
+                )
+                let cachedLines = parsedLines.map {
+                    CachedLyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized)
+                }
+                if let cacheData = try? JSONEncoder().encode(cachedLines) {
+                    try? cacheData.write(to: cacheFile)
+                }
+                return
+            }
+        }
+
+        if let plainLyrics = result.plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !plainLyrics.isEmpty {
+            lyricLines = []
+            self.plainLyrics = plainLyrics
+            status = .plainFound
+        } else {
+            lyricLines = []
+            plainLyrics = nil
+            status = .notFound
+        }
+    }
+
     private func parseAndCacheResponse(_ data: Data, track: Track, cacheFile: URL) {
         do {
             let responseObj = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
@@ -630,8 +713,10 @@ struct LRCLIBResponse: Codable {
     let id: Int?
     let trackName: String?
     let artistName: String?
-    let syncedLyrics: String?  // Optional: may be null if only plain lyrics available
-    let plainLyrics: String?   // Fallback plain text lyrics
+    let albumName: String?
+    let duration: Double?
+    let syncedLyrics: String?
+    let plainLyrics: String?
 }
 
 private struct OllamaChatResponse: Decodable {

@@ -45,6 +45,7 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                         
                         VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Zen Mode (lyrics only)", isOn: $settings.zenMode)
                             Toggle("Show Artist Name", isOn: $settings.showArtist)
                             Toggle("Show Track Title", isOn: $settings.showTitle)
                             Toggle("Show Realtime Lyrics Line", isOn: $settings.showLyrics)

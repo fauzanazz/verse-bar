@@ -617,7 +617,7 @@ class PlaybackEngine: ObservableObject {
                 currentTrack = updated
             }
         } else {
-            var newTrack = Track(title: title, artist: artist, duration: duration, elapsedTime: elapsed, isPaused: isPaused, lastUpdated: now, isEstimatedProgress: isEstimatedProgress)
+            var newTrack = Track(title: title, artist: artist, syncOffsetKey: Track.makeSyncOffsetKey(title: title, artist: artist), duration: duration, elapsedTime: elapsed, isPaused: isPaused, lastUpdated: now, isEstimatedProgress: isEstimatedProgress)
             newTrack.artworkData = artworkData
             newTrack.artworkId = artworkId
             currentTrack = newTrack
@@ -703,6 +703,7 @@ class PlaybackEngine: ObservableObject {
             current = Track(
                 title: title,
                 artist: artist,
+                syncOffsetKey: current.syncOffsetKey,
                 duration: current.duration,
                 elapsedTime: current.elapsedTime,
                 isPaused: current.isPaused,
