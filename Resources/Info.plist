@@ -25,7 +25,7 @@
 	<key>LSMultipleInstancesProhibited</key>
 	<true/>
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Verse Bar needs to control Google Chrome and Safari to detect YouTube Music playback state and retrieve current song metadata.</string>
 	<key>NSPrincipalClass</key>

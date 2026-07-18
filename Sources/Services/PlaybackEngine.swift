@@ -8,6 +8,12 @@ struct YouTubeTabCandidate: Equatable {
     let url: URL
 }
 
+enum YouTubeTrackMatchState: Equatable {
+    case matched
+    case titleMismatch
+    case noCandidates
+}
+
 enum YouTubeArtworkResolver {
     private static let supportedHosts = ["youtube.com", "www.youtube.com", "music.youtube.com"]
     private static let titleSuffixes = [" - YouTube Music", " | YouTube Music", " - YouTube", " | YouTube"]
@@ -17,7 +23,6 @@ enum YouTubeArtworkResolver {
         appleScriptOutput.split(whereSeparator: \.isNewline).compactMap { line in
             let fields = line.components(separatedBy: "|||")
             guard fields.count == 2,
-                  !fields[0].isEmpty,
                   let url = URL(string: fields[1]),
                   let scheme = url.scheme?.lowercased(),
                   scheme == "http" || scheme == "https"
@@ -42,13 +47,15 @@ enum YouTubeArtworkResolver {
         return URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
     }
 
-    static func hasMatchingTrack(in candidates: [YouTubeTabCandidate], trackTitle: String) -> Bool {
+    static func trackMatchState(in candidates: [YouTubeTabCandidate], trackTitle: String) -> YouTubeTrackMatchState {
+        guard !candidates.isEmpty else { return .noCandidates }
         let trackTitle = normalizedTitle(trackTitle)
-        guard !trackTitle.isEmpty else { return false }
+        guard !trackTitle.isEmpty else { return .titleMismatch }
         return candidates.contains {
             let tabTitle = normalizedTitle($0.title)
-            return tabTitle.contains(trackTitle) || trackTitle.contains(tabTitle)
-        }
+            return !tabTitle.isEmpty
+                && (tabTitle.contains(trackTitle) || trackTitle.contains(tabTitle))
+        } ? .matched : .titleMismatch
     }
 
     static func selectThumbnailURL(from candidates: [YouTubeTabCandidate], trackTitle: String) -> URL? {
@@ -259,8 +266,8 @@ class PlaybackEngine: ObservableObject {
                 switch verdict {
                 case .youtube(let artworkURL):
                     self?.acceptNowPlaying(info, artworkURL: artworkURL, completion: completion)
-                case .notYouTube:
-                    Logger.info("⏭️ \(appName) Now Playing is not a YouTube tab — ignoring", category: "playback")
+                case .noMatchingYouTubeTab:
+                    Logger.info("⏭️ \(appName) Now Playing title does not match any open YouTube tab — ignoring", category: "playback")
                     completion(false)
                 case .cannotVerify:
                     Logger.info("⏭️ \(appName) Now Playing source could not be verified — ignoring", category: "playback")
@@ -311,7 +318,7 @@ class PlaybackEngine: ObservableObject {
         return nil
     }
 
-    private enum YouTubeTabVerdict { case youtube(URL?), notYouTube, cannotVerify }
+    private enum YouTubeTabVerdict { case youtube(URL?), noMatchingYouTubeTab, cannotVerify }
 
     /// Reads tab titles and URLs (no JS execution → no suspended-tab hang) of
     /// the given browser before trusting MediaRemote.
@@ -337,19 +344,30 @@ class PlaybackEngine: ObservableObject {
         end tell
         return matches
         """
-        AppleScriptRunner.run(script, timeout: 2.0) { result in
-            switch result {
-            case .success(let out):
-                let candidates = YouTubeArtworkResolver.candidates(from: out)
-                guard YouTubeArtworkResolver.hasMatchingTrack(in: candidates, trackTitle: trackTitle) else {
-                    completion(.notYouTube)
-                    return
+        let maxAttempts = 3
+        func attempt(_ attemptNumber: Int) {
+            AppleScriptRunner.run(script, timeout: 2.0) { result in
+                switch result {
+                case .success(let out):
+                    let candidates = YouTubeArtworkResolver.candidates(from: out)
+                    switch YouTubeArtworkResolver.trackMatchState(in: candidates, trackTitle: trackTitle) {
+                    case .matched:
+                        completion(.youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
+                    case .titleMismatch where attemptNumber < maxAttempts:
+                        let nextAttempt = attemptNumber + 1
+                        Logger.info("⏳ \(appName) YouTube tab title has not caught up with Now Playing; retrying (\(nextAttempt)/\(maxAttempts))", category: "playback")
+                        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.35) {
+                            attempt(nextAttempt)
+                        }
+                    case .titleMismatch, .noCandidates:
+                        completion(.noMatchingYouTubeTab)
+                    }
+                case .failure:
+                    completion(.cannotVerify)
                 }
-                completion(.youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
-            case .failure:
-                completion(.cannotVerify)
             }
         }
+        attempt(1)
     }
 
     // MARK: - YouTube Music Desktop App API

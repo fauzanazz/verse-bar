@@ -112,6 +112,11 @@ struct SettingsView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                                 Spacer()
+                                Button("Quit Verse Bar", role: .destructive) {
+                                    NSApplication.shared.terminate(nil)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                             }
                             .padding(.top, 4)
                         }

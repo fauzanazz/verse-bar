@@ -54,6 +54,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DiscordPresenceService.shared.stop()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            showSettingsWindow()
+        }
+        return true
+    }
+
     @objc func showOnboardingWindow() {
         OnboardingController.shared.show()
     }

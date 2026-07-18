@@ -2,6 +2,8 @@
 
 A macOS menu bar app that shows **synced lyrics** for whatever you're playing on **YouTube / YouTube Music** — in the menu bar, a glassmorphic popover, the **Touch Bar**, and a Dynamic-Island-style **Music Island** under the notch.
 
+![Verse Bar Music Island showing synced lyrics](docs/music-island.png)
+
 > Fork of [alvinindra/verse-bar](https://github.com/alvinindra/verse-bar) with Discord Rich Presence, smarter lyric fallbacks, per-track sync, and more (see below).
 
 Lyrics by [LRCLIB](https://lrclib.net); playback detected via the macOS Now Playing system (MediaRemote), so it works with any browser that supports the Media Session API (Safari, Chrome, Arc, Dia, Brave, Vivaldi, Edge, …) and the YouTube Music Desktop App.

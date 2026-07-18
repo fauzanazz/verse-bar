@@ -136,6 +136,7 @@ final class DiscordPresenceServiceTests: XCTestCase {
         Track A - YouTube Music|||https://music.youtube.com/watch?v=BBpIV9A1PXc
         malformed
         FTP|||ftp://youtube.com/watch?v=BBpIV9A1PXc
+        |||https://music.youtube.com/watch?v=6oiP41jMJ-U
         Track B|||https://www.youtube.com/watch?v=dQw4w9WgXcQ
         """
 
@@ -145,6 +146,10 @@ final class DiscordPresenceServiceTests: XCTestCase {
                 YouTubeTabCandidate(
                     title: "Track A - YouTube Music",
                     url: URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
+                ),
+                YouTubeTabCandidate(
+                    title: "",
+                    url: URL(string: "https://music.youtube.com/watch?v=6oiP41jMJ-U")!
                 ),
                 YouTubeTabCandidate(
                     title: "Track B",
@@ -191,7 +196,7 @@ final class DiscordPresenceServiceTests: XCTestCase {
         )
     }
 
-    func testYouTubeTrackMatchRejectsUnrelatedMediaSource() {
+    func testYouTubeTrackMatchStates() {
         let candidates = [
             YouTubeTabCandidate(
                 title: "Déjà Vu - YouTube Music",
@@ -199,8 +204,9 @@ final class DiscordPresenceServiceTests: XCTestCase {
             )
         ]
 
-        XCTAssertTrue(YouTubeArtworkResolver.hasMatchingTrack(in: candidates, trackTitle: "DEJA VU"))
-        XCTAssertFalse(YouTubeArtworkResolver.hasMatchingTrack(in: candidates, trackTitle: "Instagram"))
+        XCTAssertEqual(YouTubeArtworkResolver.trackMatchState(in: candidates, trackTitle: "DEJA VU"), .matched)
+        XCTAssertEqual(YouTubeArtworkResolver.trackMatchState(in: candidates, trackTitle: "Instagram"), .titleMismatch)
+        XCTAssertEqual(YouTubeArtworkResolver.trackMatchState(in: [], trackTitle: "DEJA VU"), .noCandidates)
     }
 
     func testYouTubeThumbnailSelectionFallsBackOnlyForOneWatchTab() {
