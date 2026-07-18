@@ -191,6 +191,18 @@ final class DiscordPresenceServiceTests: XCTestCase {
         )
     }
 
+    func testYouTubeTrackMatchRejectsUnrelatedMediaSource() {
+        let candidates = [
+            YouTubeTabCandidate(
+                title: "Déjà Vu - YouTube Music",
+                url: URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
+            )
+        ]
+
+        XCTAssertTrue(YouTubeArtworkResolver.hasMatchingTrack(in: candidates, trackTitle: "DEJA VU"))
+        XCTAssertFalse(YouTubeArtworkResolver.hasMatchingTrack(in: candidates, trackTitle: "Instagram"))
+    }
+
     func testYouTubeThumbnailSelectionFallsBackOnlyForOneWatchTab() {
         let matchingURL = URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
         XCTAssertEqual(

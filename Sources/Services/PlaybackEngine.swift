@@ -42,6 +42,15 @@ enum YouTubeArtworkResolver {
         return URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
     }
 
+    static func hasMatchingTrack(in candidates: [YouTubeTabCandidate], trackTitle: String) -> Bool {
+        let trackTitle = normalizedTitle(trackTitle)
+        guard !trackTitle.isEmpty else { return false }
+        return candidates.contains {
+            let tabTitle = normalizedTitle($0.title)
+            return tabTitle.contains(trackTitle) || trackTitle.contains(tabTitle)
+        }
+    }
+
     static func selectThumbnailURL(from candidates: [YouTubeTabCandidate], trackTitle: String) -> URL? {
         let watchCandidates = candidates.compactMap { candidate in
             thumbnailURL(from: candidate.url).map { (candidate, $0) }
@@ -233,11 +242,8 @@ class PlaybackEngine: ObservableObject {
         let bundle = info.bundleIdentifier
 
         guard let bundle = bundle else {
-            // Helper couldn't resolve the source app (older macOS lacking the
-            // PID symbol). Can't filter — degrade gracefully and accept rather
-            // than hiding everything on those systems.
-            Logger.info("⚠️ Now Playing source unknown (no bundle id) — accepting", category: "playback")
-            acceptNowPlaying(info, artworkURL: nil, completion: completion)
+            Logger.info("⏭️ Now Playing source unknown (no bundle id) — ignoring", category: "playback")
+            completion(false)
             return
         }
 
@@ -257,9 +263,8 @@ class PlaybackEngine: ObservableObject {
                     Logger.info("⏭️ \(appName) Now Playing is not a YouTube tab — ignoring", category: "playback")
                     completion(false)
                 case .cannotVerify:
-                    // Automation not granted / app not scriptable — degrade
-                    // gracefully and accept rather than hiding a real track.
-                    self?.acceptNowPlaying(info, artworkURL: nil, completion: completion)
+                    Logger.info("⏭️ \(appName) Now Playing source could not be verified — ignoring", category: "playback")
+                    completion(false)
                 }
             }
             return
@@ -336,9 +341,11 @@ class PlaybackEngine: ObservableObject {
             switch result {
             case .success(let out):
                 let candidates = YouTubeArtworkResolver.candidates(from: out)
-                completion(candidates.isEmpty
-                    ? .notYouTube
-                    : .youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
+                guard YouTubeArtworkResolver.hasMatchingTrack(in: candidates, trackTitle: trackTitle) else {
+                    completion(.notYouTube)
+                    return
+                }
+                completion(.youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
             case .failure:
                 completion(.cannotVerify)
             }
