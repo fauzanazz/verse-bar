@@ -5,6 +5,12 @@ struct PopoverView: View {
     @ObservedObject private var lyricsService = LyricsService.shared
     @ObservedObject private var settings = AppSettings.shared
     @State private var showingManualSearch = false
+    private let isWindowed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(isWindowed: Bool = false) {
+        self.isWindowed = isWindowed
+    }
 
     var body: some View {
         ZStack {
@@ -18,10 +24,10 @@ struct PopoverView: View {
             }
         }
         .frame(
-            minWidth: settings.zenMode ? 280 : 320,
+            minWidth: settings.zenMode ? 240 : 280,
             idealWidth: settings.zenMode ? 300 : 320,
-            minHeight: settings.zenMode ? 140 : 420,
-            idealHeight: settings.zenMode ? 180 : 420
+            minHeight: settings.zenMode ? 120 : 300,
+            idealHeight: settings.zenMode ? 180 : 380
         )
         .sheet(isPresented: $showingManualSearch) {
             ManualLyricsSearchView(
@@ -34,20 +40,14 @@ struct PopoverView: View {
 
     private var zenContent: some View {
         GeometryReader { geometry in
-            let scale = min(2.4, max(0.8, min(
+            let lyricHeight = max(84, geometry.size.height - 36)
+            let scale = min(1.35, max(0.85, min(
                 geometry.size.width / 300,
-                geometry.size.height / 180
+                lyricHeight / 144
             )))
 
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Spacer()
-                    pinButton
-                    modeButton
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-
+                header
                 lyricsContent(scale: scale)
                     .frame(maxHeight: .infinity)
             }
@@ -55,25 +55,8 @@ struct PopoverView: View {
     }
 
     private var normalContent: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Verse Bar")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-
-                Spacer()
-
-                pinButton
-                modeButton
-
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .help("Preferences")
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+        VStack(spacing: 8) {
+            header
 
             if let track = playbackEngine.currentTrack {
                 trackPanel(track)
@@ -88,7 +71,22 @@ struct PopoverView: View {
                 syncControls(for: track)
             }
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text("Verse Bar")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+
+            Spacer(minLength: 8)
+
+            pinButton
+            modeButton
+        }
+        .padding(.leading, isWindowed ? 72 : 12)
+        .padding(.trailing, 12)
+        .padding(.top, 8)
     }
 
     private var pinButton: some View {
@@ -116,17 +114,17 @@ struct PopoverView: View {
     }
 
     private func trackPanel(_ track: Track) -> some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
                 if let data = track.artworkData, let image = NSImage(data: data) {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 } else {
                     Image(systemName: "music.note")
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                         .background(Color.accentColor.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
@@ -154,9 +152,9 @@ struct PopoverView: View {
                 mediaButton("forward.fill", action: playbackEngine.nextTrack)
             }
         }
-        .padding(12)
-        .background(Color.primary.opacity(0.05).cornerRadius(12))
-        .padding(.horizontal, 16)
+        .padding(10)
+        .background(Color.primary.opacity(0.05).cornerRadius(10))
+        .padding(.horizontal, 12)
     }
 
     private func mediaButton(
@@ -211,17 +209,20 @@ struct PopoverView: View {
                         }
                     }
                 }
-                .padding(10 * scale)
+                .padding(.horizontal, 8 * scale)
+                .padding(.vertical, 6 * scale)
             }
-            .onChange(of: lyricsService.currentLineIndex) { _, newIndex in
+            .onReceive(lyricsService.$currentLineIndex) { newIndex in
                 guard let newIndex else { return }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                    proxy.scrollTo(newIndex, anchor: .center)
+                DispatchQueue.main.async {
+                    if reduceMotion {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(newIndex, anchor: .center)
+                        }
+                    }
                 }
-            }
-            .onAppear {
-                guard let index = lyricsService.currentLineIndex else { return }
-                proxy.scrollTo(index, anchor: .center)
             }
         }
     }
@@ -306,10 +307,6 @@ struct PopoverView: View {
         }
     }
 
-    private func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        NotificationCenter.default.post(name: Notification.Name("ShowSettingsWindow"), object: nil)
-    }
 }
 
 

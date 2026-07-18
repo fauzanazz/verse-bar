@@ -77,23 +77,15 @@ class StatusItemManager: NSObject {
     private func applyPopoverSize() {
         let size = settings.zenMode
             ? NSSize(width: 300, height: 180)
-            : NSSize(width: 320, height: 420)
+            : NSSize(width: 320, height: 380)
         popover.contentSize = size
 
         guard let window = lyricsWindow else { return }
         let minimumSize = settings.zenMode
-            ? NSSize(width: 280, height: 140)
-            : NSSize(width: 320, height: 420)
+            ? NSSize(width: 240, height: 120)
+            : NSSize(width: 280, height: 300)
         window.minSize = minimumSize
-
-        let currentSize = window.contentLayoutRect.size
-        let fittedSize = NSSize(
-            width: max(currentSize.width, minimumSize.width),
-            height: max(currentSize.height, minimumSize.height)
-        )
-        if fittedSize != currentSize {
-            window.setContentSize(fittedSize)
-        }
+        window.setContentSize(size)
     }
     
     private func setupBindings() {
@@ -163,21 +155,25 @@ class StatusItemManager: NSObject {
 
         let size = settings.zenMode
             ? NSSize(width: 300, height: 180)
-            : NSSize(width: 320, height: 420)
+            : NSSize(width: 320, height: 380)
 
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Verse Bar"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.minSize = settings.zenMode
-            ? NSSize(width: 280, height: 140)
-            : NSSize(width: 320, height: 420)
-        window.contentViewController = NSHostingController(rootView: PopoverView())
+            ? NSSize(width: 240, height: 120)
+            : NSSize(width: 280, height: 300)
+        window.contentViewController = NSHostingController(rootView: PopoverView(isWindowed: true))
         if !window.setFrameUsingName("VerseBarLyricsWindow") {
             window.center()
         }
