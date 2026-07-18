@@ -84,16 +84,22 @@ struct PopoverView: View {
 
             if playbackEngine.currentTrack != nil {
                 Button(action: chooseDifferentLyrics) {
-                    Image(systemName: "magnifyingglass")
+                    if settings.zenMode {
+                        Image(systemName: "magnifyingglass")
+                    } else {
+                        Label("Lyrics", systemImage: "magnifyingglass")
+                            .font(.system(size: 11, weight: .medium))
+                    }
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.secondary)
+                .foregroundColor(.primary)
                 .disabled(lyricsService.isFetching)
                 .help("Choose different lyrics")
                 .accessibilityLabel("Choose different lyrics")
             }
             pinButton
             modeButton
+            settingsButton
         }
         .padding(.leading, isWindowed ? 72 : 12)
         .padding(.trailing, 12)
@@ -122,6 +128,21 @@ struct PopoverView: View {
         .buttonStyle(.plain)
         .foregroundColor(.secondary)
         .help(settings.zenMode ? "Switch to Normal Mode" : "Switch to Zen Mode")
+    }
+
+    private var settingsButton: some View {
+        Button(action: openSettings) {
+            Image(systemName: "gearshape.fill")
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.secondary)
+        .help("Preferences")
+        .accessibilityLabel("Preferences")
+    }
+
+    private func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: Notification.Name("ShowSettingsWindow"), object: nil)
     }
 
     private func chooseDifferentLyrics() {
@@ -383,10 +404,15 @@ private struct ManualLyricsSearchView: View {
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                 }
-                                if let duration = formattedDuration(result.duration) {
-                                    Text(duration)
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
+                                HStack(spacing: 6) {
+                                    Text(hasSyncedLyrics(result) ? "Synced" : "Plain")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(hasSyncedLyrics(result) ? .accentColor : .secondary)
+                                    if let duration = formattedDuration(result.duration) {
+                                        Text(duration)
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
 
@@ -418,6 +444,10 @@ private struct ManualLyricsSearchView: View {
         }
     }
 
+    private func hasSyncedLyrics(_ result: LRCLIBResponse) -> Bool {
+        !(result.syncedLyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     private func formattedDuration(_ duration: Double?) -> String? {
         guard let duration, duration > 0 else { return nil }
         let seconds = Int(duration)
@@ -436,8 +466,10 @@ private struct ManualLyricsSearchView: View {
             switch result {
             case .success(let matches):
                 results = matches.filter {
-                    !($0.syncedLyrics?.isEmpty ?? true)
+                    hasSyncedLyrics($0)
                         || !($0.plainLyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                }.sorted {
+                    hasSyncedLyrics($0) && !hasSyncedLyrics($1)
                 }
                 message = results.isEmpty ? "No lyrics found. Try a different title or artist." : nil
             case .failure:
