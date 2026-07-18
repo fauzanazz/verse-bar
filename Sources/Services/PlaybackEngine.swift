@@ -804,9 +804,15 @@ class PlaybackEngine: ObservableObject {
             end repeat
         end tell
         """
-        AppleScriptRunner.run(arc) { _ in }
-        AppleScriptRunner.run(chrome) { _ in }
-        AppleScriptRunner.run(safari) { _ in }
+        if settings.trackingArc && isApplicationRunning("Arc") {
+            AppleScriptRunner.run(arc) { _ in }
+        }
+        if settings.trackingChrome && isApplicationRunning("Google Chrome") {
+            AppleScriptRunner.run(chrome) { _ in }
+        }
+        if settings.trackingSafari && isApplicationRunning("Safari") {
+            AppleScriptRunner.run(safari) { _ in }
+        }
     }
 
     func resolveTrackMetadata(title: String, artist: String) {
