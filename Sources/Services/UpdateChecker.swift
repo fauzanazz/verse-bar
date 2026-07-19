@@ -54,11 +54,18 @@ final class UpdateChecker {
         request.timeoutInterval = 12
 
         let current = currentVersion
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             if let error = error {
                 Logger.error("Update check failed", category: "general", error: error)
                 self.state = manual ? .failed(message: error.localizedDescription) : .idle
+                return
+            }
+            // No published releases yet → GitHub returns 404. That's a normal
+            // "nothing to update to" state, not an error.
+            if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+                Logger.info("No releases published yet (up to date at \(current))", category: "general")
+                self.state = .upToDate(current: current)
                 return
             }
             guard let data = data,

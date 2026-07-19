@@ -199,7 +199,7 @@ class PlaybackEngine: ObservableObject {
             if enabled {
                 pollFunc { [weak self] success in
                     if success {
-                        Logger.info("✅ Source \(name): track found", category: "playback")
+                        Logger.debug("✅ Source \(name): track found", category: "playback")
                         self?.isPolling = false
                     } else {
                         trySource(at: index + 1)
@@ -225,7 +225,7 @@ class PlaybackEngine: ObservableObject {
         let bundle = info.bundleIdentifier
 
         guard let bundle = bundle else {
-            Logger.info("⏭️ Now Playing source unknown (no bundle id) — ignoring", category: "playback")
+            Logger.debug("⏭️ Now Playing source unknown (no bundle id) — ignoring", category: "playback")
             completion(false)
             return
         }
@@ -243,17 +243,17 @@ class PlaybackEngine: ObservableObject {
                 case .youtube(let artworkURL):
                     self?.acceptNowPlaying(info, artworkURL: artworkURL, completion: completion)
                 case .noMatchingYouTubeTab:
-                    Logger.info("⏭️ \(appName) Now Playing title does not match any open YouTube tab — ignoring", category: "playback")
+                    Logger.debug("⏭️ \(appName) Now Playing title does not match any open YouTube tab — ignoring", category: "playback")
                     completion(false)
                 case .cannotVerify:
-                    Logger.info("⏭️ \(appName) Now Playing source could not be verified — ignoring", category: "playback")
+                    Logger.debug("⏭️ \(appName) Now Playing source could not be verified — ignoring", category: "playback")
                     completion(false)
                 }
             }
             return
         }
 
-        Logger.info("⏭️ Ignoring unsupported Now Playing source: \(bundle)", category: "playback")
+        Logger.debug("⏭️ Ignoring unsupported Now Playing source: \(bundle)", category: "playback")
         completion(false)
     }
 
@@ -261,7 +261,7 @@ class PlaybackEngine: ObservableObject {
         let title = info.title
         let artist = info.artist.isEmpty ? "Unknown Artist" : info.artist
         let duration = info.duration > 0 ? info.duration : 300.0
-        Logger.info("🎵 Detected (NowPlaying): \(title) - \(artist) [\(String(format: "%.1f", info.elapsed))/\(String(format: "%.0f", duration))s] paused=\(info.isPaused)", category: "playback")
+        Logger.debug("🎵 Detected (NowPlaying): \(title) - \(artist) [\(String(format: "%.1f", info.elapsed))/\(String(format: "%.0f", duration))s] paused=\(info.isPaused)", category: "playback")
         DispatchQueue.main.async {
             self.updateTrack(title: title, artist: artist, duration: duration, elapsed: info.elapsed, isPaused: info.isPaused, isEstimatedProgress: false, artworkData: info.artworkData, artworkId: info.artworkId, artworkURL: artworkURL)
             completion(true)
@@ -562,7 +562,7 @@ class PlaybackEngine: ObservableObject {
                 let duration = Double(durationStr) ?? 300.0
                 let isPaused = isPausedStr.lowercased() == "true"
                 
-                Logger.info("🎵 Detected: \(title) - \(artist) [\(String(format: "%.1f", elapsed))/\(String(format: "%.0f", duration))s] paused=\(isPaused)", category: "playback")
+                Logger.debug("🎵 Detected: \(title) - \(artist) [\(String(format: "%.1f", elapsed))/\(String(format: "%.0f", duration))s] paused=\(isPaused)", category: "playback")
                 
                 DispatchQueue.main.async {
                     self.updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed, isPaused: isPaused, isEstimatedProgress: false, artworkURL: artworkURL)
@@ -586,7 +586,7 @@ class PlaybackEngine: ObservableObject {
                     return
                 }
                 
-                Logger.info("🎵 Detected (title fallback): \(title) - \(artist)", category: "playback")
+                Logger.debug("🎵 Detected (title fallback): \(title) - \(artist)", category: "playback")
                 
                 DispatchQueue.main.async {
                     self.updateTrack(title: title, artist: artist, duration: 300.0, elapsed: 0.0, isPaused: false, isEstimatedProgress: true, artworkURL: artworkURL)
@@ -773,15 +773,23 @@ class PlaybackEngine: ObservableObject {
     }
     
     private func triggerNotification(for track: Track) {
-        let content = UNMutableNotificationContent()
-        content.title = "Now Playing"
-        content.body = "\(track.title) by \(track.artist)"
-        content.sound = .none
-        
-        let request = UNNotificationRequest(identifier: "TrackChanged", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                Logger.error("Failed to deliver track change notification", category: "playback", error: error)
+        let center = UNUserNotificationCenter.current()
+        // Skip silently when the user hasn't granted notification permission —
+        // otherwise every track change logs a bogus "not allowed" error.
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized ||
+                  settings.authorizationStatus == .provisional else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = "Now Playing"
+            content.body = "\(track.title) by \(track.artist)"
+            content.sound = .none
+
+            let request = UNNotificationRequest(identifier: "TrackChanged", content: content, trigger: nil)
+            center.add(request) { error in
+                if let error = error {
+                    Logger.error("Failed to deliver track change notification", category: "playback", error: error)
+                }
             }
         }
     }

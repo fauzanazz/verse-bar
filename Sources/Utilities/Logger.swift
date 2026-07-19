@@ -20,6 +20,12 @@ enum Logger {
         os_log("%{public}@", log: log, type: .info, message)
         writeToFile("ℹ️ [\(category.uppercased())] \(message)")
     }
+
+    /// High-frequency / per-poll diagnostics. Goes to os_log (`log stream`) only,
+    /// never the file, so debug.log stays readable.
+    static func debug(_ message: String, category: String = "general") {
+        os_log("%{public}@", log: getLog(for: category), type: .debug, message)
+    }
     
     static func error(_ message: String, category: String = "general", error: Error? = nil) {
         let log = getLog(for: category)
@@ -28,11 +34,22 @@ enum Logger {
         writeToFile("❌ [\(category.uppercased())] \(message)\(errMsg)")
     }
     
+    private static let maxFileBytes: UInt64 = 2 * 1024 * 1024  // rotate at 2 MB
+
     private static func writeToFile(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
-        
-        if FileManager.default.fileExists(atPath: logFileURL.path) {
+        let fm = FileManager.default
+
+        // Rotate: keep one backup (debug.log.1) when the current log grows too large.
+        if let size = try? fm.attributesOfItem(atPath: logFileURL.path)[.size] as? UInt64,
+           size > maxFileBytes {
+            let backup = logFileURL.appendingPathExtension("1")
+            try? fm.removeItem(at: backup)
+            try? fm.moveItem(at: logFileURL, to: backup)
+        }
+
+        if fm.fileExists(atPath: logFileURL.path) {
             if let handle = try? FileHandle(forWritingTo: logFileURL) {
                 handle.seekToEndOfFile()
                 if let data = line.data(using: .utf8) {
