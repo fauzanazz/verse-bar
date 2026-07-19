@@ -151,10 +151,6 @@ final class DiscordPresenceServiceTests: XCTestCase {
                     title: "",
                     url: URL(string: "https://music.youtube.com/watch?v=6oiP41jMJ-U")!
                 ),
-                YouTubeTabCandidate(
-                    title: "Track B",
-                    url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
-                )
             ]
         )
     }
@@ -168,6 +164,8 @@ final class DiscordPresenceServiceTests: XCTestCase {
         )
 
         [
+            "https://youtube.com/watch?v=BBpIV9A1PXc",
+            "https://www.youtube.com/watch?v=BBpIV9A1PXc",
             "https://notyoutube.com/watch?v=BBpIV9A1PXc",
             "https://youtube.com/embed/BBpIV9A1PXc",
             "https://youtube.com/watch?list=RDAMVM",
@@ -181,8 +179,8 @@ final class DiscordPresenceServiceTests: XCTestCase {
     func testYouTubeThumbnailSelectionUsesUniqueTitleMatch() {
         let candidates = [
             YouTubeTabCandidate(
-                title: "Other Song | YouTube",
-                url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
+                title: "Other Song | YouTube Music",
+                url: URL(string: "https://music.youtube.com/watch?v=dQw4w9WgXcQ")!
             ),
             YouTubeTabCandidate(
                 title: "Déjà Vu - YouTube Music",
@@ -231,7 +229,7 @@ final class DiscordPresenceServiceTests: XCTestCase {
                 YouTubeTabCandidate(title: "Unrelated A", url: matchingURL),
                 YouTubeTabCandidate(
                     title: "Unrelated B",
-                    url: URL(string: "https://youtube.com/watch?v=dQw4w9WgXcQ")!
+                    url: URL(string: "https://music.youtube.com/watch?v=dQw4w9WgXcQ")!
                 )
             ],
             trackTitle: "Current track"

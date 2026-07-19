@@ -15,8 +15,8 @@ enum YouTubeTrackMatchState: Equatable {
 }
 
 enum YouTubeArtworkResolver {
-    private static let supportedHosts = ["youtube.com", "www.youtube.com", "music.youtube.com"]
-    private static let titleSuffixes = [" - YouTube Music", " | YouTube Music", " - YouTube", " | YouTube"]
+    private static let supportedHost = "music.youtube.com"
+    private static let titleSuffixes = [" - YouTube Music", " | YouTube Music"]
     private static let videoIDCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
 
     static func candidates(from appleScriptOutput: String) -> [YouTubeTabCandidate] {
@@ -25,6 +25,7 @@ enum YouTubeArtworkResolver {
             guard fields.count == 2,
                   let url = URL(string: fields[1]),
                   let scheme = url.scheme?.lowercased(),
+                  url.host?.lowercased() == supportedHost,
                   scheme == "http" || scheme == "https"
             else { return nil }
             return YouTubeTabCandidate(title: fields[0], url: url)
@@ -33,7 +34,7 @@ enum YouTubeArtworkResolver {
 
     static func videoID(from watchURL: URL) -> String? {
         guard let components = URLComponents(url: watchURL, resolvingAgainstBaseURL: false),
-              supportedHosts.contains(components.host?.lowercased() ?? ""),
+              components.host?.lowercased() == supportedHost,
               components.path == "/watch",
               let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value,
               videoID.utf8.count == 11,
@@ -127,31 +128,6 @@ class PlaybackEngine: ObservableObject {
         """
     }
     
-    // Simplified JS for regular YouTube (non-music) pages
-    private static func makeYTExtractionJS() -> String {
-        return """
-        (function(){
-            var v = document.querySelector('video');
-            if (!v) return '';
-            var titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')
-                       || document.querySelector('#info-contents h1 yt-formatted-string')
-                       || document.querySelector('h1.title');
-            var channelEl = document.querySelector('#owner #channel-name a')
-                         || document.querySelector('ytd-channel-name a')
-                         || document.querySelector('#upload-info a');
-            var title = titleEl ? titleEl.textContent.trim() : '';
-            var artist = channelEl ? channelEl.textContent.trim() : '';
-            if (!title) {
-                var dt = document.title.replace(/ - YouTube$/, '').replace(/ [|] YouTube$/, '');
-                if (dt !== 'YouTube') title = dt.trim();
-            }
-            var ct = v.currentTime || 0;
-            var dur = v.duration || 0;
-            var paused = v.paused;
-            return title + '|||' + artist + '|||' + ct + '|||' + dur + '|||' + paused;
-        })()
-        """
-    }
     
     /// Escape a JavaScript string for embedding inside an AppleScript double-quoted string.
     /// AppleScript only recognizes \" and \\ as escape sequences.
@@ -245,7 +221,7 @@ class PlaybackEngine: ObservableObject {
         }
 
         // MediaRemote reports every media source; accept supported desktop
-        // players directly and verify browser playback separately.
+        // players directly and verify browser playback is from YouTube Music.
         let bundle = info.bundleIdentifier
 
         guard let bundle = bundle else {
@@ -260,8 +236,8 @@ class PlaybackEngine: ObservableObject {
         }
 
         if let appName = PlaybackEngine.browserAppName(for: bundle) {
-            // Browser source — only accept when a YouTube tab is actually open.
-            // Guards against other websites (Netflix, SoundCloud, …) playing audio.
+            // Browser source — only accept when a matching YouTube Music tab is open.
+            // Guards against regular YouTube and other websites playing audio.
             verifyYouTubeTab(inApp: appName, trackTitle: info.title) { [weak self] verdict in
                 switch verdict {
                 case .youtube(let artworkURL):
@@ -332,7 +308,7 @@ class PlaybackEngine: ObservableObject {
                     repeat with t in tabs of w
                         try
                             set tabURL to URL of t
-                            if tabURL contains "youtube.com" then
+                            if tabURL starts with "https://music.youtube.com/" then
                                 set tabTitle to \(titleProperty) of t
                                 if matches is not "" then set matches to matches & linefeed
                                 set matches to matches & tabTitle & "|||" & tabURL
@@ -424,7 +400,6 @@ class PlaybackEngine: ObservableObject {
     private func pollArc(completion: @escaping (Bool) -> Void) {
         guard isApplicationRunning("Arc") else { completion(false); return }
         let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
-        let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
 
         let script = """
         tell application "Arc"
@@ -438,16 +413,6 @@ class PlaybackEngine: ObservableObject {
                                     set result to execute t javascript "\(escapedJS)"
                                     if result is not "" then
                                         return "YTM|||" & result & "|||" & tabURL
-                                    end if
-                                on error
-                                    set tabTitle to title of t
-                                    return "TITLE|||" & tabTitle & "|||" & tabURL
-                                end try
-                            else if tabURL contains "youtube.com/watch" then
-                                try
-                                    set result to execute t javascript "\(escapedYTJS)"
-                                    if result is not "" then
-                                        return "YT|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to title of t
@@ -471,7 +436,6 @@ class PlaybackEngine: ObservableObject {
     private func pollChrome(completion: @escaping (Bool) -> Void) {
         guard isApplicationRunning("Google Chrome") else { completion(false); return }
         let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
-        let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
 
         let script = """
         tell application "Google Chrome"
@@ -485,16 +449,6 @@ class PlaybackEngine: ObservableObject {
                                     set result to execute t javascript "\(escapedJS)"
                                     if result is not "" then
                                         return "YTM|||" & result & "|||" & tabURL
-                                    end if
-                                on error
-                                    set tabTitle to title of t
-                                    return "TITLE|||" & tabTitle & "|||" & tabURL
-                                end try
-                            else if tabURL contains "youtube.com/watch" then
-                                try
-                                    set result to execute t javascript "\(escapedYTJS)"
-                                    if result is not "" then
-                                        return "YT|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to title of t
@@ -518,7 +472,6 @@ class PlaybackEngine: ObservableObject {
     private func pollSafari(completion: @escaping (Bool) -> Void) {
         guard isApplicationRunning("Safari") else { completion(false); return }
         let escapedJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTMExtractionJS())
-        let escapedYTJS = PlaybackEngine.escapeForAppleScript(PlaybackEngine.makeYTExtractionJS())
 
         let script = """
         tell application "Safari"
@@ -532,16 +485,6 @@ class PlaybackEngine: ObservableObject {
                                     set result to do JavaScript "\(escapedJS)" in t
                                     if result is not "" then
                                         return "YTM|||" & result & "|||" & tabURL
-                                    end if
-                                on error
-                                    set tabTitle to name of t
-                                    return "TITLE|||" & tabTitle & "|||" & tabURL
-                                end try
-                            else if tabURL contains "youtube.com/watch" then
-                                try
-                                    set result to do JavaScript "\(escapedYTJS)" in t
-                                    if result is not "" then
-                                        return "YT|||" & result & "|||" & tabURL
                                     end if
                                 on error
                                     set tabTitle to name of t
@@ -572,10 +515,9 @@ class PlaybackEngine: ObservableObject {
                 return
             }
             
-            // Check for prefix type
-            if trimmed.hasPrefix("YTM|||") || trimmed.hasPrefix("YT|||") {
-                // JavaScript extraction succeeded
-                let prefixEnd = trimmed.hasPrefix("YTM|||") ? "YTM|||".count : "YT|||".count
+            if trimmed.hasPrefix("YTM|||") {
+                // YouTube Music JavaScript extraction succeeded
+                let prefixEnd = "YTM|||".count
                 var payload = String(trimmed.dropFirst(prefixEnd))
                 
                 // AppleScript wraps JS string returns in double quotes — strip them
@@ -665,9 +607,7 @@ class PlaybackEngine: ObservableObject {
         var cleaned = rawTitle
         let suffixes = [
             " - YouTube Music",
-            " | YouTube Music",
-            " - YouTube",
-            " | YouTube"
+            " | YouTube Music"
         ]
         for suffix in suffixes {
             if cleaned.hasSuffix(suffix) {
