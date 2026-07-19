@@ -8,11 +8,6 @@ struct YouTubeTabCandidate: Equatable {
     let url: URL
 }
 
-enum YouTubeTrackMatchState: Equatable {
-    case matched
-    case titleMismatch
-    case noCandidates
-}
 
 enum YouTubeArtworkResolver {
     private static let supportedHost = "music.youtube.com"
@@ -48,16 +43,6 @@ enum YouTubeArtworkResolver {
         return URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
     }
 
-    static func trackMatchState(in candidates: [YouTubeTabCandidate], trackTitle: String) -> YouTubeTrackMatchState {
-        guard !candidates.isEmpty else { return .noCandidates }
-        let trackTitle = normalizedTitle(trackTitle)
-        guard !trackTitle.isEmpty else { return .titleMismatch }
-        return candidates.contains {
-            let tabTitle = normalizedTitle($0.title)
-            return !tabTitle.isEmpty
-                && (tabTitle.contains(trackTitle) || trackTitle.contains(tabTitle))
-        } ? .matched : .titleMismatch
-    }
 
     static func selectThumbnailURL(from candidates: [YouTubeTabCandidate], trackTitle: String) -> URL? {
         let watchCandidates = candidates.compactMap { candidate in
@@ -320,30 +305,19 @@ class PlaybackEngine: ObservableObject {
         end tell
         return matches
         """
-        let maxAttempts = 3
-        func attempt(_ attemptNumber: Int) {
-            AppleScriptRunner.run(script, timeout: 2.0) { result in
-                switch result {
-                case .success(let out):
-                    let candidates = YouTubeArtworkResolver.candidates(from: out)
-                    switch YouTubeArtworkResolver.trackMatchState(in: candidates, trackTitle: trackTitle) {
-                    case .matched:
-                        completion(.youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
-                    case .titleMismatch where attemptNumber < maxAttempts:
-                        let nextAttempt = attemptNumber + 1
-                        Logger.info("⏳ \(appName) YouTube tab title has not caught up with Now Playing; retrying (\(nextAttempt)/\(maxAttempts))", category: "playback")
-                        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.35) {
-                            attempt(nextAttempt)
-                        }
-                    case .titleMismatch, .noCandidates:
-                        completion(.noMatchingYouTubeTab)
-                    }
-                case .failure:
-                    completion(.cannotVerify)
+        AppleScriptRunner.run(script, timeout: 2.0) { result in
+            switch result {
+            case .success(let out):
+                let candidates = YouTubeArtworkResolver.candidates(from: out)
+                if candidates.isEmpty {
+                    completion(.noMatchingYouTubeTab)
+                } else {
+                    completion(.youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
                 }
+            case .failure:
+                completion(.cannotVerify)
             }
         }
-        attempt(1)
     }
 
     // MARK: - YouTube Music Desktop App API

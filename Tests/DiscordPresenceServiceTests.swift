@@ -201,18 +201,6 @@ final class DiscordPresenceServiceTests: XCTestCase {
         XCTAssertFalse(PlaybackEngine.isSupportedDesktopBundle("com.apple.Music"))
     }
 
-    func testYouTubeTrackMatchStates() {
-        let candidates = [
-            YouTubeTabCandidate(
-                title: "Déjà Vu - YouTube Music",
-                url: URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
-            )
-        ]
-
-        XCTAssertEqual(YouTubeArtworkResolver.trackMatchState(in: candidates, trackTitle: "DEJA VU"), .matched)
-        XCTAssertEqual(YouTubeArtworkResolver.trackMatchState(in: candidates, trackTitle: "Instagram"), .titleMismatch)
-        XCTAssertEqual(YouTubeArtworkResolver.trackMatchState(in: [], trackTitle: "DEJA VU"), .noCandidates)
-    }
 
     func testYouTubeThumbnailSelectionFallsBackOnlyForOneWatchTab() {
         let matchingURL = URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
