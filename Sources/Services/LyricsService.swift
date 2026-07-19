@@ -11,6 +11,7 @@ enum LyricsStatus: Equatable {
     case notFound          // no synced lyrics for this track
     case unavailableOffline
     case error             // network / parse failure
+    case normalizing       // LLM fallback is extracting original metadata
 }
 
 enum LyricsSelectionError: Error {
@@ -33,6 +34,8 @@ class LyricsService: ObservableObject {
     private var playbackEngine = PlaybackEngine.shared
     private var cancellables = Set<AnyCancellable>()
     private var syncTimer: Timer?
+    private var modelFallbackTask: URLSessionDataTask?
+    private var modelFallbackID: UUID?
     
     private var lastTrackTitle = ""
     private var lastTrackArtist = ""
@@ -68,6 +71,7 @@ class LyricsService: ObservableObject {
     
     private func handleTrackChanged(_ track: Track?) {
         guard let track = track else {
+            stopModelFallback()
             self.lyricLines = []
             self.plainLyrics = nil
             self.currentLineIndex = nil
@@ -81,6 +85,7 @@ class LyricsService: ObservableObject {
         if track.title == lastTrackTitle && track.artist == lastTrackArtist {
             return
         }
+        stopModelFallback()
 
         self.lastTrackTitle = track.title
         self.lastTrackArtist = track.artist
@@ -429,6 +434,23 @@ class LyricsService: ObservableObject {
         }.resume()
     }
 
+    func cancelModelFallback() {
+        guard isUsingModelFallback else { return }
+        stopModelFallback()
+        isFetching = false
+        status = .notFound
+        Logger.info("LLM lyrics fallback cancelled by user", category: "lyrics")
+    }
+
+    @Published private(set) var isUsingModelFallback = false
+
+    private func stopModelFallback() {
+        modelFallbackTask?.cancel()
+        modelFallbackTask = nil
+        modelFallbackID = nil
+        isUsingModelFallback = false
+    }
+
     private func fetchModelNormalizedLyrics(track: Track, previousQuery: String) {
         if let cached = metadataCache.lookup(title: track.title, artist: track.artist) {
             Logger.info(
@@ -476,12 +498,17 @@ class LyricsService: ObservableObject {
         }
 
         Logger.info("Asking Ollama Cloud to normalize cover metadata: \(track.title)", category: "lyrics")
-        var request = URLRequest(url: url, timeoutInterval: 10)
+        isUsingModelFallback = true
+        status = .normalizing
+        let requestID = UUID()
+        modelFallbackID = requestID
+
+        var request = URLRequest(url: url, timeoutInterval: 30)
         request.httpMethod = "POST"
         request.httpBody = requestData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
 
             do {
@@ -503,7 +530,10 @@ class LyricsService: ObservableObject {
                 let query = "\(artist) \(title)"
 
                 DispatchQueue.main.async {
-                    guard self.isCurrentTrack(track) else { return }
+                    guard self.modelFallbackID == requestID, self.isCurrentTrack(track) else { return }
+                    self.modelFallbackTask = nil
+                    self.modelFallbackID = nil
+                    self.isUsingModelFallback = false
                     guard query.caseInsensitiveCompare(previousQuery) != .orderedSame else {
                         self.status = .notFound
                         self.isFetching = false
@@ -519,14 +549,18 @@ class LyricsService: ObservableObject {
                     self.fetchCoverLyrics(track: track, query: query, allowModelFallback: false)
                 }
             } catch {
+                if (error as? URLError)?.code == .cancelled { return }
                 Logger.error("Ollama cover metadata fallback failed", category: "lyrics", error: error)
                 DispatchQueue.main.async {
-                    guard self.isCurrentTrack(track) else { return }
+                    guard self.modelFallbackID == requestID, self.isCurrentTrack(track) else { return }
+                    self.stopModelFallback()
                     self.status = .notFound
                     self.isFetching = false
                 }
             }
-        }.resume()
+        }
+        modelFallbackTask = task
+        task.resume()
     }
 
     private func isCurrentTrack(_ track: Track) -> Bool {

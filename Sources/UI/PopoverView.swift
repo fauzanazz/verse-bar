@@ -147,6 +147,7 @@ struct PopoverView: View {
 
     private func chooseDifferentLyrics() {
         guard let track = playbackEngine.currentTrack else { return }
+        lyricsService.cancelModelFallback()
         manualSearchContext = ManualLyricsSearchContext(track: track)
     }
 
@@ -211,6 +212,8 @@ struct PopoverView: View {
     private func lyricsContent(scale: CGFloat = 1) -> some View {
         if playbackEngine.currentTrack == nil {
             statusText("Play music to see lyrics", scale: scale)
+        } else if lyricsService.isUsingModelFallback {
+            modelFallbackContent(scale: scale)
         } else if lyricsService.isFetching {
             ProgressView()
                 .controlSize(scale >= 1.5 ? .regular : .small)
@@ -298,6 +301,28 @@ struct PopoverView: View {
             .controlSize(.small)
         }
         .padding(.horizontal, 16)
+    }
+
+    private func modelFallbackContent(scale: CGFloat) -> some View {
+        VStack(spacing: 12 * scale) {
+            ProgressView()
+                .controlSize(scale >= 1.5 ? .regular : .small)
+
+            Text("Using LLM fallback to identify the original song…")
+                .font(.system(size: 13 * scale, weight: .medium, design: .rounded))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: 8) {
+                Button("Cancel", action: lyricsService.cancelModelFallback)
+                    .buttonStyle(.bordered)
+
+                Button("Choose Manually…", action: chooseDifferentLyrics)
+                    .buttonStyle(.borderedProminent)
+            }
+            .controlSize(scale >= 1.5 ? .regular : .small)
+        }
+        .padding(20 * scale)
     }
 
     private func lyricsFailureContent(scale: CGFloat) -> some View {
