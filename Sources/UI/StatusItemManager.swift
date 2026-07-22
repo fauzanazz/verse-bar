@@ -8,6 +8,7 @@ class StatusItemManager: NSObject {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var lyricsWindow: NSWindow?
+    private var capsuleWindow: NSWindow?
     
     private var playbackEngine = PlaybackEngine.shared
     private var lyricsService = LyricsService.shared
@@ -183,6 +184,39 @@ class StatusItemManager: NSObject {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    @objc private func showSoundCapsule() {
+        if let window = capsuleWindow {
+            if window.isVisible {
+                window.orderOut(nil)
+            } else {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 360, height: 520)),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Sound Capsule"
+        window.titleVisibility = .visible
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.minSize = NSSize(width: 320, height: 420)
+        window.contentViewController = NSHostingController(rootView: SoundCapsuleView())
+        if !window.setFrameUsingName("VerseBarCapsuleWindow") {
+            window.center()
+        }
+        window.setFrameAutosaveName("VerseBarCapsuleWindow")
+
+        capsuleWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
     
     // Timer for smooth text transitions in the menu bar
     private func startMenuBarUpdateTimer() {
@@ -226,6 +260,10 @@ class StatusItemManager: NSObject {
         let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(openSettings), keyEquivalent: ",")
         prefsItem.target = self
         menu.addItem(prefsItem)
+
+        let capsuleItem = NSMenuItem(title: "Sound Capsule...", action: #selector(showSoundCapsule), keyEquivalent: "")
+        capsuleItem.target = self
+        menu.addItem(capsuleItem)
 
         let updateItem = NSMenuItem(title: updateMenuItemTitle(), action: #selector(checkForUpdates), keyEquivalent: "")
         updateItem.target = self

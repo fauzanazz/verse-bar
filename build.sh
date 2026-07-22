@@ -36,12 +36,14 @@ swiftc -sdk "$SDK_PATH" \
     Sources/Services/NowPlayingService.swift \
     Sources/Services/LyricsService.swift \
     Sources/Services/LyricsMetadataCache.swift \
+    Sources/Services/ListeningStatsService.swift \
     Sources/Services/UpdateChecker.swift \
     Sources/UI/Components/GlassmorphicView.swift \
     Sources/UI/Components/MarqueeText.swift \
     Sources/UI/Components/LyricRow.swift \
     Sources/UI/PopoverView.swift \
     Sources/UI/SettingsView.swift \
+    Sources/UI/SoundCapsuleView.swift \
     Sources/UI/StatusItemManager.swift \
     Sources/UI/TouchBarController.swift \
     Sources/UI/NotchIslandView.swift \

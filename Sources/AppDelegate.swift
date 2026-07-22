@@ -30,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize the Music Island overlay (it is hidden until the user
         // enables the toggle in Preferences and something is playing).
         _ = NotchIslandController.shared
+        _ = ListeningStatsService.shared
         DiscordPresenceService.shared.start()
 
         // Observe window presentation requests
