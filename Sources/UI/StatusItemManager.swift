@@ -133,6 +133,13 @@ class StatusItemManager: NSObject {
 
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(showSoundCapsule),
+            name: Notification.Name("ShowVerseBarSoundCapsule"),
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(toggleLyricsWindow),
             name: Notification.Name("ToggleVerseBarLyricsWindow"),
             object: nil

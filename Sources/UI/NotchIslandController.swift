@@ -144,7 +144,7 @@ final class NotchIslandController: NSObject {
                 self?.handleHoverChange(inside)
             }
         )
-        let host = NSHostingView(rootView: view)
+        let host = NotchIslandHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: frame.size)
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
@@ -251,5 +251,14 @@ final class NotchIslandController: NSObject {
         // frame animation racing with SwiftUI's onHover was the source of the
         // grow/shrink flicker loop.
         panel.setFrame(frame, display: true, animate: false)
+    }
+}
+
+/// NSHostingView that forwards right-clicks to toggle the lyrics window.
+/// The SwiftUI island already consumes left-clicks (Sound Capsule) via
+/// onTapGesture, which doesn't cover secondary clicks.
+private final class NotchIslandHostingView: NSHostingView<NotchIslandView> {
+    override func rightMouseDown(with event: NSEvent) {
+        NotificationCenter.default.post(name: Notification.Name("ToggleVerseBarLyricsWindow"), object: nil)
     }
 }
