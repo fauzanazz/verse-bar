@@ -44,20 +44,18 @@ enum YouTubeArtworkResolver {
     }
 
 
-    static func selectThumbnailURL(from candidates: [YouTubeTabCandidate], trackTitle: String) -> URL? {
-        let watchCandidates = candidates.compactMap { candidate in
-            thumbnailURL(from: candidate.url).map { (candidate, $0) }
-        }
+    /// The open music.youtube.com tab whose title matches the now-playing track,
+    /// or nil when none does. Used to confirm a browser Now Playing session is
+    /// actually YouTube Music before trusting it — a bare open tab is not enough,
+    /// otherwise media from other sites (e.g. X) leaks in.
+    static func matchingCandidate(from candidates: [YouTubeTabCandidate], trackTitle: String) -> YouTubeTabCandidate? {
         let foldedTrackTitle = normalizedTitle(trackTitle)
-        let matches = watchCandidates.filter {
-            let foldedTabTitle = normalizedTitle($0.0.title)
-            return !foldedTrackTitle.isEmpty
+        guard !foldedTrackTitle.isEmpty else { return nil }
+        return candidates.first { candidate in
+            let foldedTabTitle = normalizedTitle(candidate.title)
+            return !foldedTabTitle.isEmpty
                 && (foldedTabTitle.contains(foldedTrackTitle) || foldedTrackTitle.contains(foldedTabTitle))
         }
-        if matches.count == 1 {
-            return matches[0].1
-        }
-        return matches.isEmpty && watchCandidates.count == 1 ? watchCandidates[0].1 : nil
     }
 
     private static func normalizedTitle(_ title: String) -> String {
@@ -309,10 +307,10 @@ class PlaybackEngine: ObservableObject {
             switch result {
             case .success(let out):
                 let candidates = YouTubeArtworkResolver.candidates(from: out)
-                if candidates.isEmpty {
-                    completion(.noMatchingYouTubeTab)
+                if let match = YouTubeArtworkResolver.matchingCandidate(from: candidates, trackTitle: trackTitle) {
+                    completion(.youtube(YouTubeArtworkResolver.thumbnailURL(from: match.url)))
                 } else {
-                    completion(.youtube(YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: trackTitle)))
+                    completion(.noMatchingYouTubeTab)
                 }
             case .failure:
                 completion(.cannotVerify)

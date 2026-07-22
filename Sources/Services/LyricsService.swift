@@ -192,7 +192,7 @@ class LyricsService: ObservableObject {
         
         Logger.info("🌐 Fetching from LRCLIB: \(url.absoluteString)", category: "lyrics")
         
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in

@@ -189,8 +189,8 @@ final class DiscordPresenceServiceTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            YouTubeArtworkResolver.selectThumbnailURL(from: candidates, trackTitle: "DEJA VU")?.absoluteString,
-            "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg"
+            YouTubeArtworkResolver.matchingCandidate(from: candidates, trackTitle: "DEJA VU")?.url,
+            URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")
         )
     }
 
@@ -202,27 +202,20 @@ final class DiscordPresenceServiceTests: XCTestCase {
     }
 
 
-    func testYouTubeThumbnailSelectionFallsBackOnlyForOneWatchTab() {
-        let matchingURL = URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
-        XCTAssertEqual(
-            YouTubeArtworkResolver.selectThumbnailURL(
-                from: [YouTubeTabCandidate(title: "Unrelated", url: matchingURL)],
-                trackTitle: "Current track"
-            )?.absoluteString,
-            "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg"
+    func testNonMatchingNowPlayingTitleIsRejected() {
+        let ytmTab = YouTubeTabCandidate(
+            title: "Blinding Lights - YouTube Music",
+            url: URL(string: "https://music.youtube.com/watch?v=BBpIV9A1PXc")!
         )
-
-        XCTAssertNil(YouTubeArtworkResolver.selectThumbnailURL(
-            from: [
-                YouTubeTabCandidate(title: "Unrelated A", url: matchingURL),
-                YouTubeTabCandidate(
-                    title: "Unrelated B",
-                    url: URL(string: "https://music.youtube.com/watch?v=dQw4w9WgXcQ")!
-                )
-            ],
-            trackTitle: "Current track"
-        ))
-
+        // Media from another site (e.g. X) while a YTM tab is merely open → rejected.
+        XCTAssertNil(
+            YouTubeArtworkResolver.matchingCandidate(from: [ytmTab], trackTitle: "Some viral X video")
+        )
+        // Genuine YTM playback still matches.
+        XCTAssertEqual(
+            YouTubeArtworkResolver.matchingCandidate(from: [ytmTab], trackTitle: "Blinding Lights")?.url,
+            ytmTab.url
+        )
     }
     private func jsonObject(_ data: Data) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
