@@ -78,9 +78,9 @@ final class NowPlayingService {
     private func readLines(from handle: FileHandle, onLine: @escaping (String) -> Void) {
         DispatchQueue.global(qos: .utility).async {
             var buffer = Data()
-            while true {
+            while autoreleasepool(invoking: {
                 let chunk = handle.availableData
-                if chunk.isEmpty { break }
+                guard !chunk.isEmpty else { return false }
                 buffer.append(chunk)
                 while let nl = buffer.firstIndex(of: 0x0A) {
                     let lineData = buffer.subdata(in: 0..<nl)
@@ -89,7 +89,8 @@ final class NowPlayingService {
                         onLine(line)
                     }
                 }
-            }
+                return true
+            }) {}
         }
     }
 
