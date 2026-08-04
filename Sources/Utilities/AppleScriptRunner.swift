@@ -5,7 +5,7 @@ class AppleScriptRunner {
         DispatchQueue.global(qos: .userInitiated).async {
             // Write script to a temp file to avoid shell escaping issues with osascript -e
             let tempDir = FileManager.default.temporaryDirectory
-            let scriptFile = tempDir.appendingPathComponent("versebar_\(UUID().uuidString).scpt")
+            let scriptFile = tempDir.appendingPathComponent("playerstudio_\(UUID().uuidString).scpt")
             
             do {
                 try script.write(to: scriptFile, atomically: true, encoding: .utf8)

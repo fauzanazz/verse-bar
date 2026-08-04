@@ -64,7 +64,7 @@ struct NotchIslandView: View {
         .animation(.easeInOut(duration: 0.16), value: isExpanded)
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .onTapGesture {
-            NotificationCenter.default.post(name: Notification.Name("ShowVerseBarSoundCapsule"), object: nil)
+            NotificationCenter.default.post(name: Notification.Name("ShowPlayerStudioSoundCapsule"), object: nil)
         }
         .onHover { inside in
             onHoverChange(inside)
@@ -80,7 +80,7 @@ struct NotchIslandView: View {
                 .foregroundColor(.white.opacity(0.85))
                 .frame(width: 18)
 
-            Text(currentLyric ?? trackSummary ?? "Verse Bar")
+            Text(currentLyric ?? trackSummary ?? "Player Studio")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
                 .lineLimit(1)

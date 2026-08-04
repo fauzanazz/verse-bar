@@ -48,7 +48,7 @@ class LyricsService: ObservableObject {
     private init() {
         // Resolve local cache directory
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupportDir = paths[0].appendingPathComponent("com.versebar.VerseBar", isDirectory: true)
+        let appSupportDir = paths[0].appendingPathComponent("com.playerstudio.PlayerStudio", isDirectory: true)
         self.cacheDirectory = appSupportDir.appendingPathComponent("LyricsCache", isDirectory: true)
         
         do {
@@ -193,7 +193,7 @@ class LyricsService: ObservableObject {
         Logger.info("🌐 Fetching from LRCLIB: \(url.absoluteString)", category: "lyrics")
         
         var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
+        request.setValue("PlayerStudio/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -259,7 +259,7 @@ class LyricsService: ObservableObject {
         self.isFetching = true
         
         var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
+        request.setValue("PlayerStudio/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -381,7 +381,7 @@ class LyricsService: ObservableObject {
 
         isFetching = true
         var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("VerseBar/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
+        request.setValue("PlayerStudio/1.0 (https://github.com/antikode/verse-bar)", forHTTPHeaderField: "User-Agent")
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -586,7 +586,7 @@ class LyricsService: ObservableObject {
 
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue(
-            "VerseBar/1.0 (https://github.com/antikode/verse-bar)",
+            "PlayerStudio/1.0 (https://github.com/antikode/verse-bar)",
             forHTTPHeaderField: "User-Agent"
         )
 

@@ -9,13 +9,9 @@ struct PopoverView: View {
     @ObservedObject private var playbackEngine = PlaybackEngine.shared
     @ObservedObject private var lyricsService = LyricsService.shared
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var downloadService = YouTubeDownloadService.shared
     @State private var manualSearchContext: ManualLyricsSearchContext?
-    private let isWindowed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(isWindowed: Bool = false) {
-        self.isWindowed = isWindowed
-    }
 
     var body: some View {
         ZStack {
@@ -77,7 +73,7 @@ struct PopoverView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text("Verse Bar")
+            Text("Player Studio")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
 
             Spacer(minLength: 8)
@@ -96,12 +92,14 @@ struct PopoverView: View {
                 .disabled(lyricsService.isFetching)
                 .help("Choose different lyrics")
                 .accessibilityLabel("Choose different lyrics")
+
+                downloadButton
             }
             pinButton
             modeButton
             settingsButton
         }
-        .padding(.leading, isWindowed ? 72 : 12)
+        .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.top, 8)
     }
@@ -138,6 +136,60 @@ struct PopoverView: View {
         .foregroundColor(.secondary)
         .help("Preferences")
         .accessibilityLabel("Preferences")
+    }
+
+    /// Downloads the current YouTube track as MP3 into the offline library.
+    private var downloadButton: some View {
+        Button {
+            if let track = playbackEngine.currentTrack {
+                downloadService.download(track)
+            }
+        } label: {
+            switch downloadService.state {
+            case .idle:
+                Image(systemName: "arrow.down.circle")
+            case .downloading:
+                ProgressView()
+                    .controlSize(.small)
+            case .succeeded:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            case .failed:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundColor(.red)
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.secondary)
+        .disabled(isDownloading)
+        .help(downloadHelpText)
+        .accessibilityLabel("Download MP3")
+        .onChange(of: downloadService.state) { _, newState in
+            if case .succeeded = newState {
+                // Let the success checkmark breathe, then return to idle.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    downloadService.reset()
+                }
+            }
+        }
+    }
+
+    private var isDownloading: Bool {
+        if case .downloading = downloadService.state { return true }
+        return false
+    }
+
+    private var downloadHelpText: String {
+        switch downloadService.state {
+        case .idle:
+            return "Save MP3 to your offline library"
+        case .downloading(let progress):
+            return String(format: "Downloading… %.0f%%", progress)
+        case .succeeded(let url):
+            return "Saved: \(url.lastPathComponent)"
+        case .failed(let message):
+            return message
+        }
     }
 
     private func openSettings() {

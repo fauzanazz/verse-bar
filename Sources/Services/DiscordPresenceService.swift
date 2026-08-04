@@ -134,7 +134,7 @@ final class DiscordPresenceService {
         case clear
     }
 
-    private let queue = DispatchQueue(label: "com.versebar.discord-presence")
+    private let queue = DispatchQueue(label: "com.playerstudio.discord-presence")
     private let lifecycleLock = NSLock()
     private var started = false
     private var subscription: AnyCancellable?

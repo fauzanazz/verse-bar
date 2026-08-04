@@ -28,7 +28,7 @@ final class OnboardingController: NSObject {
             defer: false
         )
         window.center()
-        window.title = "Verse Bar Setup"
+        window.title = "Player Studio Setup"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false

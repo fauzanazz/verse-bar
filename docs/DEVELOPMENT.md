@@ -5,7 +5,7 @@
 Two ways to build:
 
 ```bash
-./build.sh            # produces "Verse Bar.app" via swiftc — no Xcode project needed
+./build.sh            # produces "Player Studio.app" via swiftc — no Xcode project needed
 swift build           # SwiftPM (Package.swift), useful for iteration
 swift test            # runs the test suite (Tests/)
 ```
@@ -20,7 +20,8 @@ Sources/
 ├── main.swift
 ├── Models/         # Track, LyricLine, AppSettings
 ├── Services/       # PlaybackEngine, LyricsService, LyricsMetadataCache,
-│                   # NowPlayingService, DiscordPresenceService, UpdateChecker
+│                   # NowPlayingService, DiscordPresenceService, UpdateChecker,
+│                   # YouTubeDownloadService
 ├── UI/             # StatusItemManager, PopoverView, SettingsView, TouchBarController,
 │                   # NotchIslandController/View, OnboardingController/View, Components/
 └── Utilities/      # AppleScriptRunner, Logger, MediaKeys, PermissionHelper
@@ -42,7 +43,7 @@ Package.swift
   3. Cover-song query built from the video title
   4. **Ollama fallback** — POSTs to `http://127.0.0.1:11434/api/chat` (`gpt-oss:120b-cloud`, JSON format, temperature 0) to extract original `track`/`artist` from noisy cover-video metadata, then re-queries LRCLIB. Silently skipped if Ollama isn't running.
 - `LyricsMetadataCache` persists normalized metadata and the user's **manual lyric selections** (exact + fuzzy lookup), so a chosen match sticks across sessions.
-- Each lyric line runs through `CFStringTransform "Any-Latin"` to attach a romanization when CJK characters are detected; results are cached on disk with both original and romanized text (`~/Library/Application Support/com.versebar.VerseBar/LyricsCache`).
+- Each lyric line runs through `CFStringTransform "Any-Latin"` to attach a romanization when CJK characters are detected; results are cached on disk with both original and romanized text (`~/Library/Application Support/com.playerstudio.PlayerStudio/LyricsCache`).
 - A 100 ms timer interpolates the active line against playback position plus the per-track manual offset (`AppSettings.manualSyncOffset(for:)`).
 - `DiscordPresenceService` speaks the Discord IPC protocol directly over the local Unix socket (no SDK): little-endian length-prefixed frames, handshake, `SET_ACTIVITY` with track info, YouTube thumbnail artwork, and a "Listen on YouTube Music" button. Ping frames are answered with pongs. See `Tests/DiscordPresenceServiceTests.swift` for the codec contract.
 - `UpdateChecker` polls the GitHub releases API and compares semver against `CFBundleShortVersionString`, surfacing an "Update available" affordance in the UI.

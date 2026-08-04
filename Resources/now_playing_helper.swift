@@ -1,4 +1,4 @@
-// Long-running helper spawned by VerseBar.
+// Long-running helper spawned by PlayerStudio.
 // Must run via Apple-signed /usr/bin/swift so MediaRemote returns data
 // on macOS 15.4+ (Apple restricts ad-hoc/unsigned apps from reading it).
 //

@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "VerseBar",
+    name: "PlayerStudio",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "VerseBar", targets: ["VerseBar"]),
+        .executable(name: "PlayerStudio", targets: ["PlayerStudio"]),
     ],
     targets: [
-        .executableTarget(name: "VerseBar", path: "Sources"),
-        .testTarget(name: "VerseBarTests", dependencies: ["VerseBar"], path: "Tests"),
+        .executableTarget(name: "PlayerStudio", path: "Sources"),
+        .testTarget(name: "PlayerStudioTests", dependencies: ["PlayerStudio"], path: "Tests"),
     ],
     swiftLanguageModes: [.v5]
 )

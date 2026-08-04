@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import VerseBar
+@testable import PlayerStudio
 
 final class DiscordPresenceServiceTests: XCTestCase {
     func testCodecBuffersFragmentedFrames() throws {
@@ -131,7 +131,7 @@ final class DiscordPresenceServiceTests: XCTestCase {
         )
     }
 
-    func testYouTubeCandidateParsingDropsMalformedRows() {
+    func testYouTubeCandidateParsingFiltersMalformedRows() {
         let output = """
         Track A - YouTube Music|||https://music.youtube.com/watch?v=BBpIV9A1PXc
         malformed
@@ -151,6 +151,10 @@ final class DiscordPresenceServiceTests: XCTestCase {
                     title: "",
                     url: URL(string: "https://music.youtube.com/watch?v=6oiP41jMJ-U")!
                 ),
+                YouTubeTabCandidate(
+                    title: "Track B",
+                    url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
+                ),
             ]
         )
     }
@@ -163,9 +167,15 @@ final class DiscordPresenceServiceTests: XCTestCase {
             "https://i.ytimg.com/vi/BBpIV9A1PXc/hqdefault.jpg"
         )
 
+        // Regular YouTube watch pages are accepted too.
+        for host in ["youtube.com", "www.youtube.com", "m.youtube.com"] {
+            XCTAssertEqual(
+                YouTubeArtworkResolver.videoID(from: URL(string: "https://\(host)/watch?v=BBpIV9A1PXc")!),
+                "BBpIV9A1PXc"
+            )
+        }
+
         [
-            "https://youtube.com/watch?v=BBpIV9A1PXc",
-            "https://www.youtube.com/watch?v=BBpIV9A1PXc",
             "https://notyoutube.com/watch?v=BBpIV9A1PXc",
             "https://youtube.com/embed/BBpIV9A1PXc",
             "https://youtube.com/watch?list=RDAMVM",

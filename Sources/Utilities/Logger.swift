@@ -2,7 +2,7 @@ import Foundation
 import os.log
 
 enum Logger {
-    private static let subsystem = "com.versebar.VerseBar"
+    private static let subsystem = "com.playerstudio.PlayerStudio"
     private static let generalLog = OSLog(subsystem: subsystem, category: "general")
     private static let playbackLog = OSLog(subsystem: subsystem, category: "playback")
     private static let lyricsLog = OSLog(subsystem: subsystem, category: "lyrics")
@@ -10,7 +10,7 @@ enum Logger {
     // Log file for easy debugging
     private static let logFileURL: URL = {
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appDir = paths[0].appendingPathComponent("com.versebar.VerseBar", isDirectory: true)
+        let appDir = paths[0].appendingPathComponent("com.playerstudio.PlayerStudio", isDirectory: true)
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         return appDir.appendingPathComponent("debug.log")
     }()

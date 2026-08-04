@@ -7,23 +7,16 @@ class StatusItemManager: NSObject {
     
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    private var lyricsWindow: NSWindow?
-    private var capsuleWindow: NSWindow?
     
     private var playbackEngine = PlaybackEngine.shared
-    private var lyricsService = LyricsService.shared
     private var settings = AppSettings.shared
     private var cancellables = Set<AnyCancellable>()
-    
-    // Dedicated timer for smooth menu bar updates
-    private var menuBarUpdateTimer: Timer?
     
     private override init() {
         super.init()
         setupStatusItem()
         setupPopover()
         setupBindings()
-        startMenuBarUpdateTimer()
     }
     
     private func setupStatusItem() {
@@ -34,8 +27,17 @@ class StatusItemManager: NSObject {
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             
-            // Native monochrome template icon: automatically turns white on dark bars and black on light bars!
-            if let image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Verse Bar") {
+            // Menu bar glyph derived from the app logo — monochrome template
+            // image: automatically turns white on dark bars and black on light bars!
+            let menuBarIcon: NSImage? = {
+                if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
+                   let image = NSImage(contentsOf: url) {
+                    image.size = NSSize(width: 18, height: 18)
+                    return image
+                }
+                return nil
+            }()
+            if let image = menuBarIcon ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: "Player Studio") {
                 image.isTemplate = true
                 button.image = image
                 button.imagePosition = .imageRight
@@ -80,13 +82,6 @@ class StatusItemManager: NSObject {
             ? NSSize(width: 300, height: 180)
             : NSSize(width: 320, height: 380)
         popover.contentSize = size
-
-        guard let window = lyricsWindow else { return }
-        let minimumSize = settings.zenMode
-            ? NSSize(width: 240, height: 120)
-            : NSSize(width: 280, height: 300)
-        window.minSize = minimumSize
-        window.setContentSize(size)
     }
     
     private func setupBindings() {
@@ -98,25 +93,9 @@ class StatusItemManager: NSObject {
             }
             .store(in: &cancellables)
         
-        // Observe lyric line changes
-        lyricsService.$currentLineIndex
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateMenuBarText()
-            }
-            .store(in: &cancellables)
-        
-        // Observe lyric lines loaded
-        lyricsService.$lyricLines
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateMenuBarText()
-            }
-            .store(in: &cancellables)
-        
         // Observe display setting changes
         settings.$showArtist
-            .combineLatest(settings.$showTitle, settings.$showLyrics)
+            .combineLatest(settings.$showTitle)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateMenuBarText()
@@ -127,21 +106,7 @@ class StatusItemManager: NSObject {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(togglePopoverFromNotification),
-            name: Notification.Name("ToggleVerseBarPopover"),
-            object: nil
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(showSoundCapsule),
-            name: Notification.Name("ShowVerseBarSoundCapsule"),
-            object: nil
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(toggleLyricsWindow),
-            name: Notification.Name("ToggleVerseBarLyricsWindow"),
+            name: Notification.Name("TogglePlayerStudioPopover"),
             object: nil
         )
     }
@@ -150,88 +115,6 @@ class StatusItemManager: NSObject {
         togglePopover()
     }
 
-    @objc private func toggleLyricsWindow() {
-        if let window = lyricsWindow {
-            if window.isVisible {
-                window.orderOut(nil)
-            } else {
-                window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            return
-        }
-
-        let size = settings.zenMode
-            ? NSSize(width: 300, height: 180)
-            : NSSize(width: 320, height: 380)
-
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Verse Bar"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-        window.isMovableByWindowBackground = true
-        window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.minSize = settings.zenMode
-            ? NSSize(width: 240, height: 120)
-            : NSSize(width: 280, height: 300)
-        window.contentViewController = NSHostingController(rootView: PopoverView(isWindowed: true))
-        if !window.setFrameUsingName("VerseBarLyricsWindow") {
-            window.center()
-        }
-        window.setFrameAutosaveName("VerseBarLyricsWindow")
-
-        lyricsWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    @objc private func showSoundCapsule() {
-        if let window = capsuleWindow {
-            if window.isVisible {
-                window.orderOut(nil)
-            } else {
-                window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            return
-        }
-
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 360, height: 520)),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Sound Capsule"
-        window.titleVisibility = .visible
-        window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.minSize = NSSize(width: 320, height: 420)
-        window.contentViewController = NSHostingController(rootView: SoundCapsuleView())
-        if !window.setFrameUsingName("VerseBarCapsuleWindow") {
-            window.center()
-        }
-        window.setFrameAutosaveName("VerseBarCapsuleWindow")
-
-        capsuleWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-    
-    // Timer for smooth text transitions in the menu bar
-    private func startMenuBarUpdateTimer() {
-        menuBarUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.updateMenuBarText()
-        }
-    }
-    
     @objc private func statusItemClicked(_ sender: Any?) {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp {
@@ -255,6 +138,11 @@ class StatusItemManager: NSObject {
     
     private func showContextMenu() {
         let menu = NSMenu()
+        let windowItem = NSMenuItem(title: "Open Player Studio…", action: #selector(openMainWindow), keyEquivalent: "o")
+        windowItem.target = self
+        menu.addItem(windowItem)
+        menu.addItem(NSMenuItem.separator())
+
         let modeItem = NSMenuItem(
             title: settings.zenMode ? "Switch to Normal Mode" : "Switch to Zen Mode",
             action: #selector(toggleZenMode),
@@ -268,7 +156,7 @@ class StatusItemManager: NSObject {
         prefsItem.target = self
         menu.addItem(prefsItem)
 
-        let capsuleItem = NSMenuItem(title: "Sound Capsule...", action: #selector(showSoundCapsule), keyEquivalent: "")
+        let capsuleItem = NSMenuItem(title: "Sound Capsule...", action: #selector(postShowSoundCapsule), keyEquivalent: "")
         capsuleItem.target = self
         menu.addItem(capsuleItem)
 
@@ -278,7 +166,7 @@ class StatusItemManager: NSObject {
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Verse Bar", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Player Studio", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -302,6 +190,14 @@ class StatusItemManager: NSObject {
         NotificationCenter.default.post(name: Notification.Name("ShowSettingsWindow"), object: nil)
     }
 
+    @objc private func postShowSoundCapsule() {
+        NotificationCenter.default.post(name: Notification.Name("ShowPlayerStudioSoundCapsule"), object: nil)
+    }
+
+    @objc private func openMainWindow() {
+        NotificationCenter.default.post(name: Notification.Name("ShowMainWindow"), object: nil)
+    }
+
     @objc private func checkForUpdates() {
         UpdateChecker.shared.checkManually()
     }
@@ -320,51 +216,12 @@ class StatusItemManager: NSObject {
             return
         }
         
-        var displayString = ""
+        var elements: [String] = []
+        if settings.showTitle { elements.append(track.title) }
+        if settings.showArtist { elements.append(track.artist) }
+        let displayString = elements.joined(separator: " - ")
         
-        // 1. If lyrics are enabled and we have an active lyric line, show that
-        if settings.showLyrics,
-           !lyricsService.lyricLines.isEmpty,
-           let activeIdx = lyricsService.currentLineIndex,
-           activeIdx >= 0 && activeIdx < lyricsService.lyricLines.count {
-            let activeLine = lyricsService.lyricLines[activeIdx]
-            let activeLineText: String
-            if settings.showRomanization, let romanized = activeLine.romanized {
-                activeLineText = romanized
-            } else {
-                activeLineText = activeLine.text
-            }
-            if !activeLineText.isEmpty {
-                displayString = activeLineText
-            }
-        }
-        
-        // 2. If lyrics are enabled but this track has no synced lyrics, show
-        //    only the icon — the "not found" message lives in the popup, not
-        //    the menu bar.
-        if displayString.isEmpty && settings.showLyrics {
-            switch lyricsService.status {
-            case .plainFound, .notFound, .unavailableOffline, .error:
-                button.title = ""
-                return
-            default:
-                break
-            }
-        }
-
-        // 3. If no lyrics line showing, build title/artist
-        if displayString.isEmpty {
-            var elements: [String] = []
-            if settings.showTitle {
-                elements.append(track.title)
-            }
-            if settings.showArtist {
-                elements.append(track.artist)
-            }
-            displayString = elements.joined(separator: " - ")
-        }
-        
-        // Capping lyric line length at 40 characters for responsive, clean status bar look
+        // Cap at 40 characters for a responsive, clean status bar look
         let maxChars = 40
         if displayString.count > maxChars {
             let index = displayString.index(displayString.startIndex, offsetBy: maxChars - 3)

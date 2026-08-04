@@ -254,11 +254,11 @@ final class NotchIslandController: NSObject {
     }
 }
 
-/// NSHostingView that forwards right-clicks to toggle the lyrics window.
-/// The SwiftUI island already consumes left-clicks (Sound Capsule) via
-/// onTapGesture, which doesn't cover secondary clicks.
+/// NSHostingView that forwards right-clicks to open the main window's Now
+/// Playing pane. The SwiftUI island already consumes left-clicks (Sound
+/// Capsule) via onTapGesture, which doesn't cover secondary clicks.
 private final class NotchIslandHostingView: NSHostingView<NotchIslandView> {
     override func rightMouseDown(with event: NSEvent) {
-        NotificationCenter.default.post(name: Notification.Name("ToggleVerseBarLyricsWindow"), object: nil)
+        NotificationCenter.default.post(name: Notification.Name("TogglePlayerStudioLyricsWindow"), object: nil)
     }
 }

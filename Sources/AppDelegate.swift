@@ -3,11 +3,11 @@ import SwiftUI
 import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var settingsWindow: NSWindow?
-    
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMainMenu()
+
         let currentPID = ProcessInfo.processInfo.processIdentifier
-        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.versebar.VerseBar")
+        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.playerstudio.PlayerStudio")
             .contains(where: { $0.processIdentifier < currentPID }) {
             NSApp.terminate(nil)
             return
@@ -31,11 +31,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // enables the toggle in Preferences and something is playing).
         _ = NotchIslandController.shared
         _ = ListeningStatsService.shared
+        _ = AudioPlayerService.shared
+        _ = LibraryService.shared
         DiscordPresenceService.shared.start()
 
         // Observe window presentation requests
-        NotificationCenter.default.addObserver(self, selector: #selector(showSettingsWindow), name: Notification.Name("ShowSettingsWindow"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(showPreferences), name: Notification.Name("ShowSettingsWindow"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(showSoundCapsule), name: Notification.Name("ShowPlayerStudioSoundCapsule"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(showNowPlayingPane), name: Notification.Name("TogglePlayerStudioLyricsWindow"), object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(showOnboardingWindow), name: Notification.Name("ShowOnboardingWindow"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(showMainWindow), name: Notification.Name("ShowMainWindow"), object: nil)
 
         // Show the first-run setup window if the user hasn't finished it.
         DispatchQueue.main.async {
@@ -48,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UpdateChecker.shared.check(manual: false)
         }
 
-        Logger.info("Verse Bar application launched.", category: "general")
+        Logger.info("Player Studio application launched.", category: "general")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -57,55 +62,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            showSettingsWindow()
+            showMainWindow()
         }
         return true
+    }
+
+    @objc func showMainWindow() {
+        MainWindowController.shared.show()
     }
 
     @objc func showOnboardingWindow() {
         OnboardingController.shared.show()
     }
     
-    @objc func showSettingsWindow() {
-        if let window = settingsWindow {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        
-        // Create a beautiful native window for preferences
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 480),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.center()
-        window.title = "Verse Bar Preferences"
-        window.isReleasedWhenClosed = false
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        
-        // Enable premium look matching standard macOS utility settings
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        
-        // Embed the SwiftUI SettingsView
-        window.contentViewController = NSHostingController(rootView: SettingsView())
-        
-        self.settingsWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Register cleanup callback on window close
-        NotificationCenter.default.addObserver(self, selector: #selector(settingsWindowWillClose(_:)), name: NSWindow.willCloseNotification, object: window)
+    @objc func showPreferences() {
+        MainWindowController.shared.show(section: .settings)
     }
-    
-    @objc func settingsWindowWillClose(_ notification: Notification) {
-        if let closedWindow = notification.object as? NSWindow, closedWindow == settingsWindow {
-            self.settingsWindow = nil
-            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: closedWindow)
-            Logger.info("Preferences window closed.", category: "general")
-        }
+
+    /// The app ships without a menu bar (popover-first), but the main window
+    /// still needs standard shortcuts: Settings… is ⌘,, Quit is ⌘Q.
+    private func installMainMenu() {
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: "About Player Studio",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        appMenu.addItem(.separator())
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showPreferences),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+        appMenu.addItem(
+            withTitle: "Hide Player Studio",
+            action: #selector(NSApplication.hide(_:)),
+            keyEquivalent: "h"
+        )
+        appMenu.addItem(.separator())
+        appMenu.addItem(
+            withTitle: "Quit Player Studio",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        appMenuItem.submenu = appMenu
+
+        let mainMenu = NSMenu()
+        mainMenu.addItem(appMenuItem)
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc func showSoundCapsule() {
+        MainWindowController.shared.show(section: .capsule)
+    }
+
+    @objc func showNowPlayingPane() {
+        MainWindowController.shared.show(nowPlaying: true)
     }
 }

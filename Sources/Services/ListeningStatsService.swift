@@ -34,7 +34,7 @@ final class ListeningStatsService {
     static let shared = ListeningStatsService()
 
     private var database: OpaquePointer?
-    private let queue = DispatchQueue(label: "com.versebar.stats")
+    private let queue = DispatchQueue(label: "com.playerstudio.stats")
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
     private var cancellables = Set<AnyCancellable>()
 
@@ -45,7 +45,7 @@ final class ListeningStatsService {
     private init() {
         let appSupportDirectory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("com.versebar.VerseBar", isDirectory: true)
+            .appendingPathComponent("com.playerstudio.PlayerStudio", isDirectory: true)
 
         do {
             try FileManager.default.createDirectory(
@@ -228,6 +228,49 @@ final class ListeningStatsService {
                 topSongs: topSongs,
                 topArtists: topArtists
             )
+        }
+    }
+
+    /// Most recent distinct songs, newest first.
+    func recentPlays(limit: Int) -> [(songKey: String, title: String, artist: String, playedAt: Date)] {
+        queue.sync {
+            guard let database else { return [] }
+            let sql = """
+            SELECT song_key, title, artist, MAX(played_at) p FROM plays
+            GROUP BY song_key ORDER BY p DESC LIMIT ?
+            """
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_int(statement, 1, Int32(limit))
+
+            var results: [(songKey: String, title: String, artist: String, playedAt: Date)] = []
+            while sqlite3_step(statement) == SQLITE_ROW,
+                  let key = columnText(statement, index: 0),
+                  let title = columnText(statement, index: 1),
+                  let artist = columnText(statement, index: 2) {
+                let playedAt = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 3)))
+                results.append((key, title, artist, playedAt))
+            }
+            return results
+        }
+    }
+
+    /// song_key → last play time, for the "Last Played" sort.
+    func lastPlayedByKey() -> [String: Date] {
+        queue.sync {
+            guard let database else { return [:] }
+            let sql = "SELECT song_key, MAX(played_at) FROM plays GROUP BY song_key"
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [:] }
+            defer { sqlite3_finalize(statement) }
+
+            var byKey: [String: Date] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW,
+                  let key = columnText(statement, index: 0) {
+                byKey[key] = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 1)))
+            }
+            return byKey
         }
     }
 

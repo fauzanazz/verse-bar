@@ -32,12 +32,12 @@ jobs:
           # Ad-hoc signing (identity "-") quiets some Gatekeeper noise on
           # first launch. For a fully-trusted install we'd need an Apple
           # Developer ID and notarization — out of scope for this project.
-          /usr/bin/codesign --force --deep --sign - "Verse Bar.app"
-          /usr/bin/codesign --verify --deep --strict --verbose=2 "Verse Bar.app" || true
+          /usr/bin/codesign --force --deep --sign - "Player Studio.app"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "Player Studio.app" || true
 
       - name: Zip app bundle
         run: |
-          ditto -c -k --sequesterRsrc --keepParent "Verse Bar.app" "VerseBar-${GITHUB_REF_NAME}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "Player Studio.app" "PlayerStudio-${GITHUB_REF_NAME}.zip"
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -46,28 +46,28 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME}"
-          DMG_NAME="VerseBar-${VERSION}.dmg"
+          DMG_NAME="PlayerStudio-${VERSION}.dmg"
 
           # create-dmg builds a styled disk image: large icons, a side-by-side
           # layout of the .app and the /Applications symlink, and a window
           # that opens to a fixed size when the user double-clicks the DMG.
           # No INSTALL.txt — the visual layout is self-explanatory.
           create-dmg \
-            --volname "Verse Bar" \
+            --volname "Player Studio" \
             --window-pos 200 120 \
             --window-size 620 400 \
             --icon-size 128 \
-            --icon "Verse Bar.app" 160 200 \
+            --icon "Player Studio.app" 160 200 \
             --app-drop-link 460 200 \
-            --hide-extension "Verse Bar.app" \
+            --hide-extension "Player Studio.app" \
             --no-internet-enable \
             "$DMG_NAME" \
-            "Verse Bar.app"
+            "Player Studio.app"
 
       - name: Generate checksums
         run: |
-          shasum -a 256 "VerseBar-${GITHUB_REF_NAME}.dmg" > "VerseBar-${GITHUB_REF_NAME}.dmg.sha256"
-          shasum -a 256 "VerseBar-${GITHUB_REF_NAME}.zip" > "VerseBar-${GITHUB_REF_NAME}.zip.sha256"
+          shasum -a 256 "PlayerStudio-${GITHUB_REF_NAME}.dmg" > "PlayerStudio-${GITHUB_REF_NAME}.dmg.sha256"
+          shasum -a 256 "PlayerStudio-${GITHUB_REF_NAME}.zip" > "PlayerStudio-${GITHUB_REF_NAME}.zip.sha256"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -78,13 +78,13 @@ jobs:
             ## Install
 
             1. Download the `.dmg` below, double-click to mount it.
-            2. Drag **Verse Bar** onto the **Applications** shortcut.
-            3. Bypass Gatekeeper (one-time — the app is ad-hoc signed but not notarized, so macOS will show *"Verse Bar was blocked to protect your Mac"*). Pick one:
+            2. Drag **Player Studio** onto the **Applications** shortcut.
+            3. Bypass Gatekeeper (one-time — the app is ad-hoc signed but not notarized, so macOS will show *"Player Studio was blocked to protect your Mac"*). Pick one:
 
             **Option A — terminal one-liner (fastest):**
 
             ```bash
-            xattr -dr com.apple.quarantine "/Applications/Verse Bar.app"
+            xattr -dr com.apple.quarantine "/Applications/Player Studio.app"
             ```
 
             **Option B — GUI:** open the app once, then go to **System Settings → Privacy & Security** and click **Open Anyway**.
@@ -95,11 +95,11 @@ jobs:
 
             | File | Notes |
             |---|---|
-            | `VerseBar-${{ github.ref_name }}.dmg` | Recommended — styled drag-to-install disk image |
-            | `VerseBar-${{ github.ref_name }}.zip` | Plain zip of the `.app` bundle |
+            | `PlayerStudio-${{ github.ref_name }}.dmg` | Recommended — styled drag-to-install disk image |
+            | `PlayerStudio-${{ github.ref_name }}.zip` | Plain zip of the `.app` bundle |
             | `*.sha256` | Checksums |
           files: |
-            VerseBar-${{ github.ref_name }}.dmg
-            VerseBar-${{ github.ref_name }}.dmg.sha256
-            VerseBar-${{ github.ref_name }}.zip
-            VerseBar-${{ github.ref_name }}.zip.sha256
+            PlayerStudio-${{ github.ref_name }}.dmg
+            PlayerStudio-${{ github.ref_name }}.dmg.sha256
+            PlayerStudio-${{ github.ref_name }}.zip
+            PlayerStudio-${{ github.ref_name }}.zip.sha256

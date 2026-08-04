@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
+    @ObservedObject private var library = LibraryService.shared
+    @ObservedObject private var separation = VocalSeparationService.shared
     @State private var updateStatus: String = ""
     @State private var isCheckingUpdate: Bool = false
 
@@ -23,7 +25,7 @@ struct SettingsView: View {
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.white)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Verse Bar Preferences")
+                            Text("Player Studio Preferences")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                             Text("Configure playback syncing and display options")
@@ -48,7 +50,6 @@ struct SettingsView: View {
                             Toggle("Zen Mode (lyrics only)", isOn: $settings.zenMode)
                             Toggle("Show Artist Name", isOn: $settings.showArtist)
                             Toggle("Show Track Title", isOn: $settings.showTitle)
-                            Toggle("Show Realtime Lyrics Line", isOn: $settings.showLyrics)
                             Toggle("Show Music Island (Dynamic Island under notch)", isOn: $settings.showNotchIsland)
                             Toggle("Romanize Korean / Japanese / Chinese lyrics", isOn: $settings.showRomanization)
                         }
@@ -94,6 +95,115 @@ struct SettingsView: View {
                         .background(Color.primary.opacity(0.03).cornerRadius(10))
                     }
 
+                    // Karaoke Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("KARAOKE")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            switch VocalSeparationService.availability() {
+                            case .ready:
+                                Text("Demucs is installed. Use the ⋯ menu on any library track to create an instrumental.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            case .installable:
+                                Text("Karaoke mode separates vocals with Demucs, which is not installed yet.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if separation.isInstalling {
+                                    HStack(spacing: 6) {
+                                        ProgressView().controlSize(.small)
+                                        Text("Installing… this downloads a few hundred MB.")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                } else {
+                                    Button("Install Demucs") {
+                                        separation.installDemucs()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                                if let message = separation.installMessage {
+                                    Text(message)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.red)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            case .unavailable:
+                                Text("Karaoke mode needs Demucs. Install uv first: brew install uv")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                Text("brew install uv")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Text("First separation downloads a ~2 GB model, then runs about as long as the song itself.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                    }
+
+                    // Offline Library Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("OFFLINE LIBRARY")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Download Folder")
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    Text(settings.downloadFolder.path)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                Spacer()
+                                Button("Choose…") {
+                                    chooseDownloadFolder()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+
+                            Text(downloadAvailabilityText)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(YouTubeDownloadService.shared.isAvailable ? .green : .red)
+
+                            Text("Saves the current YouTube track as MP3 (yt-dlp + ffmpeg). Install both with `brew install yt-dlp ffmpeg`, or drop the binaries into Player Studio.app/Contents/Resources.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            HStack(spacing: 10) {
+                                Text(library.isScanning ? "Scanning…" : "\(library.tracks.count) songs")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button("Rescan") {
+                                    library.refresh()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(library.isScanning)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.03).cornerRadius(10))
+                    }
+
                     // General Options Section
                     VStack(alignment: .leading, spacing: 12) {
                         Text("GENERAL OPTIONS")
@@ -101,7 +211,7 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                         
                         VStack(alignment: .leading, spacing: 10) {
-                            Toggle("Start Verse Bar at Login", isOn: $settings.launchAtLogin)
+                            Toggle("Start Player Studio at Login", isOn: $settings.launchAtLogin)
                                 .onChange(of: settings.launchAtLogin) { _, newValue in
                                     configureLoginItem(enabled: newValue)
                                 }
@@ -112,7 +222,7 @@ struct SettingsView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                                 Spacer()
-                                Button("Quit Verse Bar", role: .destructive) {
+                                Button("Quit Player Studio", role: .destructive) {
                                     NSApplication.shared.terminate(nil)
                                 }
                                 .buttonStyle(.bordered)
@@ -128,7 +238,7 @@ struct SettingsView: View {
                     
                     // App version + update check
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("ABOUT VERSE BAR")
+                        Text("ABOUT PLAYER STUDIO")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .foregroundColor(.secondary)
 
@@ -186,7 +296,7 @@ struct SettingsView: View {
                             .foregroundColor(.accentColor)
                         
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("To sync lyrics with millisecond precision, Verse Bar needs browser permission to query the media timer. Enable this setting in your preferred browser:")
+                            Text("To sync lyrics with millisecond precision, Player Studio needs browser permission to query the media timer. Enable this setting in your preferred browser:")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +310,7 @@ struct SettingsView: View {
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                             
-                            Text("*If disabled, Verse Bar falls back to smart wall-clock estimation which still works out-of-the-box!*")
+                            Text("*If disabled, Player Studio falls back to smart wall-clock estimation which still works out-of-the-box!*")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -213,10 +323,33 @@ struct SettingsView: View {
                 .padding(20)
             }
         }
-        .frame(width: 420, height: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(NSColor.windowBackgroundColor))
     }
     
+    private var downloadAvailabilityText: String {
+        let service = YouTubeDownloadService.shared
+        if service.isAvailable {
+            return "✓ yt-dlp and ffmpeg found"
+        }
+        let missing = [
+            YouTubeDownloadService.locate("yt-dlp") == nil ? "yt-dlp" : nil,
+            YouTubeDownloadService.locate("ffmpeg") == nil ? "ffmpeg" : nil,
+        ].compactMap { $0 }.joined(separator: " and ")
+        return "⚠︎ \(missing) not found"
+    }
+
+    private func chooseDownloadFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.downloadFolderPath = url.path
+        }
+    }
+
     private func configureLoginItem(enabled: Bool) {
         // Modern login item setup (requires ServiceManagement framework integration)
         // Here we log the state and update preferences, the launcher does the work.

@@ -1,10 +1,10 @@
-# Verse Bar
+# Player Studio
 
 A macOS menu bar app that shows **synced lyrics** for whatever you're playing on **Spotify, YouTube, or YouTube Music** — in the menu bar, a glassmorphic popover, the **Touch Bar**, and a Dynamic-Island-style **Music Island** under the notch.
 
-![Verse Bar Music Island showing synced lyrics](docs/music-island.png)
+![Player Studio Music Island showing synced lyrics](docs/music-island.png)
 
-> Fork of [alvinindra/verse-bar](https://github.com/alvinindra/verse-bar) with Discord Rich Presence, smarter lyric fallbacks, per-track sync, and more (see below).
+> Player Studio is an independent, full-stack rewrite of the original [Verse Bar](https://github.com/alvinindra/verse-bar) by [alvinindra](https://github.com/alvinindra) — no longer a fork, but built on its idea. Discord Rich Presence, smarter lyric fallbacks, per-track sync, and more (see below).
 
 Lyrics by [LRCLIB](https://lrclib.net); playback detected via the macOS Now Playing system (MediaRemote), supporting the Spotify desktop app, browsers with the Media Session API (Safari, Chrome, Arc, Dia, Brave, Vivaldi, Edge, …), and the YouTube Music Desktop App.
 
@@ -36,15 +36,15 @@ Requires macOS 14+.
 git clone https://github.com/fauzanazz/verse-bar.git
 cd verse-bar
 ./build.sh
-open "Verse Bar.app"
+open "Player Studio.app"
 ```
 
 Move the app to `/Applications` so macOS keeps its permissions.
 
-**"Verse Bar was blocked" warning?** The app is ad-hoc signed (not notarized). One-time fix:
+**"Player Studio was blocked" warning?** The app is ad-hoc signed (not notarized). One-time fix:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Verse Bar.app"
+xattr -dr com.apple.quarantine "/Applications/Player Studio.app"
 ```
 
 (or **System Settings → Privacy & Security → Open Anyway**.)
@@ -70,7 +70,7 @@ Build, architecture, testing, and release docs live in [`docs/DEVELOPMENT.md`](d
 
 ## Credits
 
-- Fork of [alvinindra/verse-bar](https://github.com/alvinindra/verse-bar)
+- Original concept: [Verse Bar](https://github.com/alvinindra/verse-bar) by [alvinindra](https://github.com/alvinindra) — Player Studio has since grown into its own full-stack app
 - Lyrics by [LRCLIB](https://lrclib.net)
 - Inspired by [Lyricfier](https://github.com/emilioastarita/lyricfier) and [SpotMenu](https://github.com/kmikiy/SpotMenu)
 

@@ -10,9 +10,14 @@ struct YouTubeTabCandidate: Equatable {
 
 
 enum YouTubeArtworkResolver {
-    private static let supportedHost = "music.youtube.com"
-    private static let titleSuffixes = [" - YouTube Music", " | YouTube Music"]
+    private static let supportedHosts = ["music.youtube.com", "www.youtube.com", "youtube.com", "m.youtube.com"]
+    private static let titleSuffixes = [" - YouTube Music", " | YouTube Music", " - YouTube", " | YouTube"]
     private static let videoIDCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+
+    private static func isYouTubeHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return supportedHosts.contains(host)
+    }
 
     static func candidates(from appleScriptOutput: String) -> [YouTubeTabCandidate] {
         appleScriptOutput.split(whereSeparator: \.isNewline).compactMap { line in
@@ -20,7 +25,7 @@ enum YouTubeArtworkResolver {
             guard fields.count == 2,
                   let url = URL(string: fields[1]),
                   let scheme = url.scheme?.lowercased(),
-                  url.host?.lowercased() == supportedHost,
+                  isYouTubeHost(url.host),
                   scheme == "http" || scheme == "https"
             else { return nil }
             return YouTubeTabCandidate(title: fields[0], url: url)
@@ -29,7 +34,7 @@ enum YouTubeArtworkResolver {
 
     static func videoID(from watchURL: URL) -> String? {
         guard let components = URLComponents(url: watchURL, resolvingAgainstBaseURL: false),
-              components.host?.lowercased() == supportedHost,
+              isYouTubeHost(components.host),
               components.path == "/watch",
               let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value,
               videoID.utf8.count == 11,
@@ -44,9 +49,9 @@ enum YouTubeArtworkResolver {
     }
 
 
-    /// The open music.youtube.com tab whose title matches the now-playing track,
-    /// or nil when none does. Used to confirm a browser Now Playing session is
-    /// actually YouTube Music before trusting it — a bare open tab is not enough,
+    /// The open YouTube tab whose title matches the now-playing track, or nil
+    /// when none does. Used to confirm a browser Now Playing session is
+    /// actually YouTube before trusting it — a bare open tab is not enough,
     /// otherwise media from other sites (e.g. X) leaks in.
     static func matchingCandidate(from candidates: [YouTubeTabCandidate], trackTitle: String) -> YouTubeTabCandidate? {
         let foldedTrackTitle = normalizedTitle(trackTitle)
@@ -151,6 +156,9 @@ class PlaybackEngine: ObservableObject {
 
     private func poll() {
         guard !isPolling else { return }
+        // Local playback owns the track state; skip MediaRemote/browser scraping
+        // entirely so our own MPNowPlayingInfoCenter entry can't feed back in.
+        if AudioPlayerService.shared.isEngaged { return }
         isPolling = true
         
         // Skip the per-browser AppleScript fallbacks while the MediaRemote
@@ -219,8 +227,8 @@ class PlaybackEngine: ObservableObject {
         }
 
         if let appName = PlaybackEngine.browserAppName(for: bundle) {
-            // Browser source — only accept when a matching YouTube Music tab is open.
-            // Guards against regular YouTube and other websites playing audio.
+            // Browser source — only accept when a matching YouTube tab is open.
+            // Guards against other websites (e.g. X) playing audio.
             verifyYouTubeTab(inApp: appName, trackTitle: info.title) { [weak self] verdict in
                 switch verdict {
                 case .youtube(let artworkURL):
@@ -291,7 +299,7 @@ class PlaybackEngine: ObservableObject {
                     repeat with t in tabs of w
                         try
                             set tabURL to URL of t
-                            if tabURL starts with "https://music.youtube.com/" then
+                            if tabURL starts with "https://music.youtube.com/" or tabURL starts with "https://www.youtube.com/watch" or tabURL starts with "https://youtube.com/watch" or tabURL starts with "https://m.youtube.com/watch" then
                                 set tabTitle to \(titleProperty) of t
                                 if matches is not "" then set matches to matches & linefeed
                                 set matches to matches & tabTitle & "|||" & tabURL
@@ -380,7 +388,7 @@ class PlaybackEngine: ObservableObject {
                     repeat with t in tabs of w
                         try
                             set tabURL to URL of t
-                            if tabURL contains "music.youtube.com" then
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" then
                                 try
                                     set result to execute t javascript "\(escapedJS)"
                                     if result is not "" then
@@ -416,7 +424,7 @@ class PlaybackEngine: ObservableObject {
                     repeat with t in tabs of w
                         try
                             set tabURL to URL of t
-                            if tabURL contains "music.youtube.com" then
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" then
                                 try
                                     set result to execute t javascript "\(escapedJS)"
                                     if result is not "" then
@@ -452,7 +460,7 @@ class PlaybackEngine: ObservableObject {
                     repeat with t in tabs of w
                         try
                             set tabURL to URL of t
-                            if tabURL contains "music.youtube.com" then
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" then
                                 try
                                     set result to do JavaScript "\(escapedJS)" in t
                                     if result is not "" then
@@ -579,7 +587,9 @@ class PlaybackEngine: ObservableObject {
         var cleaned = rawTitle
         let suffixes = [
             " - YouTube Music",
-            " | YouTube Music"
+            " | YouTube Music",
+            " - YouTube",
+            " | YouTube"
         ]
         for suffix in suffixes {
             if cleaned.hasSuffix(suffix) {
@@ -649,24 +659,45 @@ class PlaybackEngine: ObservableObject {
         }
     }
     
+    // MARK: - Local Playback Input
+
+    /// Feeds state from the built-in local player. Bypasses the poll cascade.
+    /// `artworkId` varies per file so `Track.==` republishes on song changes;
+    /// `artworkURL` stays nil so `ListeningStatsService.identityKey` takes the
+    /// `"ta:"` branch and matches `LibraryTrack.statsKey`.
+    func publishLocalTrack(title: String, artist: String, duration: Double,
+                           elapsed: Double, isPaused: Bool, artworkData: Data?, fileID: String) {
+        updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed,
+                    isPaused: isPaused, isEstimatedProgress: false,
+                    artworkData: artworkData, artworkId: "local:\(fileID)", artworkURL: nil)
+    }
+
+    func clearLocalTrack() {
+        if currentTrack != nil { currentTrack = nil }
+    }
+
     // MARK: - Player Actions
 
     func togglePlayPause() {
+        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.togglePlayPause(); return }
         MediaKeys.send(MediaKeys.play)
         runJSInBrowsers("(function(){var v=document.querySelector('video');if(!v)return;if(v.paused){v.play().catch(function(){});}else{v.pause();}})()")
     }
 
     func nextTrack() {
+        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.next(); return }
         MediaKeys.send(MediaKeys.next)
         runJSInBrowsers("(function(){var b=document.querySelector('.next-button')||document.querySelector('[aria-label=\\\"Next\\\"]');if(b)b.click();})()")
     }
 
     func previousTrack() {
+        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.previous(); return }
         MediaKeys.send(MediaKeys.previous)
         runJSInBrowsers("(function(){var b=document.querySelector('.previous-button')||document.querySelector('[aria-label=\\\"Previous\\\"]');if(b)b.click();})()")
     }
 
     func seek(to seconds: TimeInterval) {
+        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.seek(to: seconds); return }
         let clamped = max(0.0, seconds)
         if let track = currentTrack {
             var updated = track
@@ -745,6 +776,9 @@ class PlaybackEngine: ObservableObject {
     }
     
     private func triggerNotification(for track: Track) {
+        // UNUserNotificationCenter.current() throws (bundleProxyForCurrentProcess
+        // is nil) when running under xctest — no app bundle to resolve.
+        guard NSClassFromString("XCTestCase") == nil else { return }
         let center = UNUserNotificationCenter.current()
         // Skip silently when the user hasn't granted notification permission —
         // otherwise every track change logs a bogus "not allowed" error.

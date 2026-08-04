@@ -25,7 +25,7 @@ final class NowPlayingService {
     private var latest: [String: Any] = [:]
     private var latestUpdatedAt: Date = .distantPast
     private var helperProcess: Process?
-    private let restartQueue = DispatchQueue(label: "com.versebar.nowplaying.restart")
+    private let restartQueue = DispatchQueue(label: "com.playerstudio.nowplaying.restart")
 
     private init() {}
 

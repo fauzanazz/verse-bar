@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Verse Bar — synced lyrics in your macOS menu bar</title>
+  <title>Player Studio — synced lyrics in your macOS menu bar</title>
   <meta name="description" content="A minimal macOS menu bar app that shows synced lyrics for whatever's playing in any browser — in the menu bar, a glassmorphic popover, the MacBook Pro Touch Bar, and a Music Island under the notch. With album art and CJK romanization." />
-  <meta property="og:title" content="Verse Bar" />
+  <meta property="og:title" content="Player Studio" />
   <meta property="og:description" content="Browser-agnostic synced lyrics for macOS — with album art and Korean / Japanese / Chinese romanization." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://alvinindra.github.io/verse-bar/" />
+  <meta property="og:url" content="https://fauzanazz.github.io/verse-bar/" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%E2%99%AA%3C/text%3E%3C/svg%3E" />
   <style>
     :root {
@@ -332,12 +332,12 @@
     <nav>
       <div class="brand">
         <div class="brand-glyph">♪</div>
-        Verse Bar
+        Player Studio
       </div>
       <div class="links">
         <a href="#features">Features</a>
         <a href="#install">Install</a>
-        <a href="https://github.com/alvinindra/verse-bar">GitHub</a>
+        <a href="https://github.com/fauzanazz/verse-bar">GitHub</a>
       </div>
     </nav>
 
@@ -345,17 +345,17 @@
       <span class="tag">macOS · open source · free</span>
       <h1>Synced lyrics<br/><span class="accent">in your menu bar.</span></h1>
       <p class="lead">
-        Verse Bar streams the current lyric of whatever's playing in your browser —
+        Player Studio streams the current lyric of whatever's playing in your browser —
         Safari, Chrome, Arc, Dia, Brave, you name it — straight into the macOS menu
         bar, a glassmorphic popover, the MacBook Pro Touch Bar, and a Music Island
         under the notch. With album art and Korean / Japanese / Chinese romanization
         built in.
       </p>
       <div>
-        <a class="cta" href="https://github.com/alvinindra/verse-bar/releases/latest" rel="noopener">
+        <a class="cta" href="https://github.com/fauzanazz/verse-bar/releases/latest" rel="noopener">
           ↓ Download .dmg for macOS
         </a>
-        <a class="cta-secondary" href="https://github.com/alvinindra/verse-bar" rel="noopener">View on GitHub →</a>
+        <a class="cta-secondary" href="https://github.com/fauzanazz/verse-bar" rel="noopener">View on GitHub →</a>
       </div>
       <div class="version-pill">Latest release · macOS 11+ · Apple Silicon &amp; Intel</div>
 
@@ -445,20 +445,20 @@
         <div class="step">
           <div>
             <h3>Download the .dmg</h3>
-            <p>Grab <code>VerseBar-vX.Y.Z.dmg</code> from the <a href="https://github.com/alvinindra/verse-bar/releases/latest">releases page</a> and double-click it.</p>
+            <p>Grab <code>PlayerStudio-vX.Y.Z.dmg</code> from the <a href="https://github.com/fauzanazz/verse-bar/releases/latest">releases page</a> and double-click it.</p>
           </div>
         </div>
         <div class="step">
           <div>
             <h3>Drag to Applications</h3>
-            <p>In the mounted disk image, drag <strong>Verse Bar</strong> onto the <strong>Applications</strong> shortcut. Done — that's the whole install.</p>
+            <p>In the mounted disk image, drag <strong>Player Studio</strong> onto the <strong>Applications</strong> shortcut. Done — that's the whole install.</p>
           </div>
         </div>
         <div class="step">
           <div>
             <h3>Bypass Gatekeeper (one time)</h3>
-            <p>Verse Bar is ad-hoc signed but not notarized, so macOS will show <em>"Verse Bar was blocked to protect your Mac."</em> Run this in Terminal to clear it for good:</p>
-            <pre><code>xattr -dr com.apple.quarantine "/Applications/Verse Bar.app"</code></pre>
+            <p>Player Studio is ad-hoc signed but not notarized, so macOS will show <em>"Player Studio was blocked to protect your Mac."</em> Run this in Terminal to clear it for good:</p>
+            <pre><code>xattr -dr com.apple.quarantine "/Applications/Player Studio.app"</code></pre>
             <p>Prefer the GUI? Open the app once, then go to <strong>System Settings → Privacy &amp; Security</strong> and press <strong>Open Anyway</strong>. Either path is one-time only.</p>
           </div>
         </div>
@@ -478,19 +478,19 @@
 
       <h2 style="margin-top:48px;">Or build from source</h2>
       <p class="subhead">Single Swift build script. Needs Xcode Command Line Tools.</p>
-<pre><code>git clone https://github.com/alvinindra/verse-bar.git
+<pre><code>git clone https://github.com/fauzanazz/verse-bar.git
 cd verse-bar
 ./build.sh
-open "Verse Bar.app"</code></pre>
+open "Player Studio.app"</code></pre>
     </section>
 
     <footer>
       <p>
         Lyrics by <a href="https://lrclib.net">LRCLIB</a>.
-        Source on <a href="https://github.com/alvinindra/verse-bar">GitHub</a>.
+        Source on <a href="https://github.com/fauzanazz/verse-bar">GitHub</a>.
         MIT licensed.
       </p>
-      <p style="margin-top:6px;">© 2026 Verse Bar contributors</p>
+      <p style="margin-top:6px;">© 2026 Player Studio contributors · Original <a href="https://github.com/alvinindra/verse-bar">Verse Bar</a> by <a href="https://github.com/alvinindra">alvinindra</a></p>
     </footer>
   </div>
 </body>

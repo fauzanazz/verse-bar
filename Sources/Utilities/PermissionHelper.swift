@@ -1,7 +1,7 @@
 import Cocoa
 import UserNotifications
 
-/// Status of a single permission required by Verse Bar.
+/// Status of a single permission required by Player Studio.
 enum PermissionStatus {
     case granted
     case denied

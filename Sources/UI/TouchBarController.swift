@@ -16,8 +16,8 @@ import Combine
 /// is not viable here.
 final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchBarDelegate {
 
-    private let lyricId    = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.lyric")
-    private let controlsId = NSTouchBarItem.Identifier("com.versebar.popover.touchbar.controls")
+    private let lyricId    = NSTouchBarItem.Identifier("com.playerstudio.popover.touchbar.lyric")
+    private let controlsId = NSTouchBarItem.Identifier("com.playerstudio.popover.touchbar.controls")
 
     private weak var lyricLabel: NSTextField?
     private weak var playPauseButton: NSButton?
@@ -29,7 +29,7 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
     override func makeTouchBar() -> NSTouchBar? {
         let bar = NSTouchBar()
         bar.delegate = self
-        bar.customizationIdentifier = NSTouchBar.CustomizationIdentifier("com.versebar.popover.touchbar")
+        bar.customizationIdentifier = NSTouchBar.CustomizationIdentifier("com.playerstudio.popover.touchbar")
         bar.defaultItemIdentifiers = [lyricId, .flexibleSpace, controlsId]
         bar.customizationAllowedItemIdentifiers = [lyricId, controlsId]
         return bar
@@ -197,12 +197,12 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
             } else if let track = playbackEngine.currentTrack {
                 text = "\(track.title) — \(track.artist)"
             } else {
-                text = "Verse Bar"
+                text = "Player Studio"
             }
         } else if let track = playbackEngine.currentTrack {
             text = "\(track.title) — \(track.artist)"
         } else {
-            text = "Verse Bar"
+            text = "Player Studio"
         }
 
         let maxChars = 80

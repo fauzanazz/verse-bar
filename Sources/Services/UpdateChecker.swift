@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Checks the GitHub releases API for a newer Verse Bar build and exposes
+/// Checks the GitHub releases API for a newer Player Studio build and exposes
 /// the result so the UI can surface an "Update available" affordance.
 ///
 /// Compares `CFBundleShortVersionString` against the latest release tag
@@ -50,7 +50,7 @@ final class UpdateChecker {
 
         var request = URLRequest(url: releasesAPI)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("VerseBar/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("PlayerStudio/\(currentVersion)", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 12
 
         let current = currentVersion
@@ -132,7 +132,7 @@ final class UpdateChecker {
     private func presentUpToDate(current: String) {
         let alert = NSAlert()
         alert.messageText = "You're up to date"
-        alert.informativeText = "Verse Bar \(current) is the latest version."
+        alert.informativeText = "Player Studio \(current) is the latest version."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
@@ -142,7 +142,7 @@ final class UpdateChecker {
     private func presentUpdateAvailable(latest: String, current: String, url: URL) {
         let alert = NSAlert()
         alert.messageText = "Update available"
-        alert.informativeText = "Verse Bar \(latest) is available (you have \(current)). Open the release page to download?"
+        alert.informativeText = "Player Studio \(latest) is available (you have \(current)). Open the release page to download?"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Later")

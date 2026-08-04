@@ -1,6 +1,6 @@
 .DS_Store
-Verse Bar.app/
-VerseBar
+Player Studio.app/
+PlayerStudio
 *.dSYM
 *.xcodeproj/
 build/
@@ -8,3 +8,4 @@ build/
 DerivedData/
 *.zip
 *.sha256
+Verse Bar.app/

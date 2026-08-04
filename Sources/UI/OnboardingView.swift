@@ -57,7 +57,7 @@ struct OnboardingView: View {
                     .font(.system(size: 28, weight: .bold))
                     .foregroundColor(.white)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Welcome to Verse Bar")
+                    Text("Welcome to Player Studio")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     Text("Let's get synced lyrics working in ~30 seconds.")
@@ -87,7 +87,7 @@ struct OnboardingView: View {
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             stepTitle("Step 1 — Install location")
-            stepHint("Verse Bar should run from your Applications folder so macOS keeps permissions stable across updates.")
+            stepHint("Player Studio should run from your Applications folder so macOS keeps permissions stable across updates.")
 
             HStack(spacing: 12) {
                 Image(systemName: inApplications ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
@@ -98,7 +98,7 @@ struct OnboardingView: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                     Text(inApplications
                          ? "You're good. Ready to set up permissions."
-                         : "Quit Verse Bar, drag the app into /Applications, then reopen it.")
+                         : "Quit Player Studio, drag the app into /Applications, then reopen it.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -111,7 +111,7 @@ struct OnboardingView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.shield")
                         .foregroundColor(.accentColor)
-                    Text("If macOS said \"Verse Bar was blocked\"")
+                    Text("If macOS said \"Player Studio was blocked\"")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                 }
                 Text("The app is ad-hoc signed but not notarized. Open Terminal and run this command once to clear the warning for good:")
@@ -119,7 +119,7 @@ struct OnboardingView: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Text("xattr -dr com.apple.quarantine \"/Applications/Verse Bar.app\"")
+                    Text("xattr -dr com.apple.quarantine \"/Applications/Player Studio.app\"")
                         .font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
                         .padding(8)
@@ -128,7 +128,7 @@ struct OnboardingView: View {
                     Button("Copy") {
                         let pb = NSPasteboard.general
                         pb.clearContents()
-                        pb.setString("xattr -dr com.apple.quarantine \"/Applications/Verse Bar.app\"", forType: .string)
+                        pb.setString("xattr -dr com.apple.quarantine \"/Applications/Player Studio.app\"", forType: .string)
                     }
                     .controlSize(.small)
                 }
@@ -148,7 +148,7 @@ struct OnboardingView: View {
     private var automationStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             stepTitle("Step 2 — Automation")
-            stepHint("Verse Bar reads the YouTube Music tab via AppleScript. macOS will ask once per browser. Tap each button — accept the prompt.")
+            stepHint("Player Studio reads the YouTube Music tab via AppleScript. macOS will ask once per browser. Tap each button — accept the prompt.")
 
             permRow(title: "Safari",       status: safariAuto)  { askAutomation("com.apple.Safari") }
             permRow(title: "Google Chrome", status: chromeAuto) { askAutomation("com.google.Chrome") }
