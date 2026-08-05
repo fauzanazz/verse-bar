@@ -28,9 +28,9 @@ final class UpdateChecker {
     }
 
     /// GitHub releases API endpoint for the project.
-    private let releasesAPI = URL(string: "https://api.github.com/repos/fauzanazz/verse-bar/releases/latest")!
+    private let releasesAPI = URL(string: "https://api.github.com/repos/fauzanazz/player-studio/releases/latest")!
     /// Public releases page (opened when user clicks "Download").
-    private let releasesPage = URL(string: "https://github.com/fauzanazz/verse-bar/releases/latest")!
+    private let releasesPage = URL(string: "https://github.com/fauzanazz/player-studio/releases/latest")!
 
     private var inFlight: URLSessionDataTask?
 

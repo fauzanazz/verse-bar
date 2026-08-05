@@ -25,9 +25,13 @@ Lyrics are provided by [LRCLIB](https://lrclib.net). YouTube search and download
 
 Player Studio requires macOS 14 or newer.
 
+Download the latest `.dmg` from [GitHub Releases](https://github.com/fauzanazz/player-studio/releases/latest), then drag **Player Studio** to **Applications**.
+
+To build from source instead:
+
 ```bash
-git clone https://github.com/fauzanazz/verse-bar.git
-cd verse-bar
+git clone https://github.com/fauzanazz/player-studio.git
+cd player-studio
 ./build.sh
 open "Player Studio.app"
 ```

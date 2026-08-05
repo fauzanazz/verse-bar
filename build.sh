@@ -19,8 +19,8 @@ echo "📦 Using macOS SDK at: $SDK_PATH"
 # 4. Compile Swift files
 echo "🛠️ Compiling Swift sources..."
 swiftc -sdk "$SDK_PATH" \
-    -Onone \
-    -DDEBUG \
+    -target arm64-apple-macos14.0 \
+    -O \
     -framework Cocoa \
     -framework SwiftUI \
     -framework Combine \
