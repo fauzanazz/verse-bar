@@ -53,6 +53,10 @@ Package.swift
 
 macOS Sequoia (15.x) silently filters third-party tray items registered with `addSystemTrayItem:` + `DFRElementSetControlStripPresenceForIdentifier` unless the binary is Developer-ID signed and notarized. This project ships ad-hoc signed, so the ambient Control Strip path is not viable; the popover **Pin** toggle is the supported workaround.
 
+## Gotchas
+
+- **Periodic timers must live in the smallest view that needs them.** A `Timer.publish` (e.g. the 0.5 s progress ticker) attached to a window-level view re-renders the entire tree every tick — including the `NavigationSplitView` detail. Rows re-render, and any **open SwiftUI `Menu` gets rebuilt and collapses** (submenu triggers visibly vanish under the cursor, "flicker"). Symptom seen: "Add to Album" trigger vanishing on hover in Home but not Library. Fix: extract the ticking UI into its own view that owns the timer and its `@State` (see `SeekBar`), so the tick only re-renders the slider row.
+
 ## Releases
 
 Tagged commits on `main` (`v1.x.y`) trigger `.github/workflows/release.yml`, which builds the app, packages it, and attaches the archive to a GitHub Release:

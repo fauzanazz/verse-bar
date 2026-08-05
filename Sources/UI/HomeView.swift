@@ -8,6 +8,7 @@ struct HomeView: View {
     @ObservedObject private var audioPlayer = AudioPlayerService.shared
     @State private var sort: LibrarySort = .added
     @State private var trackToDelete: LibraryTrack?
+    @State private var hoveredRecentID: LibraryTrack.ID?
 
     private var lastPlayed: [String: Date] {
         ListeningStatsService.shared.lastPlayedByKey()
@@ -97,16 +98,14 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
                 artwork(item.track, width: 160)
-                Button {
-                    playFromLibrary(item.track)
-                } label: {
+                if hoveredRecentID == item.track.id {
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 30))
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                        .padding(6)
+                        .allowsHitTesting(false)
                 }
-                .buttonStyle(.plain)
-                .padding(6)
             }
             Text(item.track.title)
                 .font(.system(size: 13, weight: .semibold))
@@ -120,6 +119,14 @@ struct HomeView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(width: 160, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { hovering in hoveredRecentID = hovering ? item.track.id : nil }
+        .onTapGesture { playFromLibrary(item.track) }
+        .contextMenu {
+            Button("Play") { playFromLibrary(item.track) }
+            Button("Play Next") { audioPlayer.playNext(item.track) }
+            Button("Add to Queue") { audioPlayer.addToQueue(item.track) }
+        }
     }
 
     private var librarySection: some View {
@@ -130,17 +137,19 @@ struct HomeView: View {
                 Spacer()
                 LibrarySortMenu(sort: $sort)
             }
-            ForEach(sortedTracks) { track in
-                TrackRow(
-                    track: track,
-                    subtitle: subtitle(for: track),
-                    isCurrent: audioPlayer.queue.current?.id == track.id,
-                    onPlay: { playFromLibrary(track) },
-                    onPlayNext: { audioPlayer.playNext(track) },
-                    onAddToQueue: { audioPlayer.addToQueue(track) },
-                    onReveal: { NSWorkspace.shared.activateFileViewerSelecting([track.url]) },
-                    onDelete: { trackToDelete = track }
-                )
+            LazyVStack(spacing: 8) {
+                ForEach(sortedTracks) { track in
+                    TrackRow(
+                        track: track,
+                        subtitle: subtitle(for: track),
+                        isCurrent: audioPlayer.queue.current?.id == track.id,
+                        onPlay: { playFromLibrary(track) },
+                        onPlayNext: { audioPlayer.playNext(track) },
+                        onAddToQueue: { audioPlayer.addToQueue(track) },
+                        onReveal: { NSWorkspace.shared.activateFileViewerSelecting([track.url]) },
+                        onDelete: { trackToDelete = track }
+                    )
+                }
             }
         }
     }

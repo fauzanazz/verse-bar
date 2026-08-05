@@ -69,9 +69,9 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
     }
 
     private func makeLyricItem() -> NSTouchBarItem {
-        let label = NSTextField(labelWithString: currentText())
+        let label = NSTextField(labelWithString: "")
         label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .white
+        label.attributedStringValue = currentAttributedText()
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
         label.cell?.truncatesLastVisibleLine = true
@@ -164,6 +164,11 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
             .sink { [weak self] _ in self?.refreshLabel() }
             .store(in: &cancellables)
 
+        lyricsService.$currentWordIndex
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshLabel() }
+            .store(in: &cancellables)
+
         lyricsService.$lyricLines
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshLabel() }
@@ -176,38 +181,54 @@ final class PopoverHostingController: NSHostingController<PopoverView>, NSTouchB
     }
 
     private func refreshLabel() {
-        lyricLabel?.stringValue = currentText()
+        lyricLabel?.attributedStringValue = currentAttributedText()
         refreshPlayPauseIcon()
     }
 
-    private func currentText() -> String {
-        let text: String
+    private func currentAttributedText() -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let white: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.white]
+
         if !lyricsService.lyricLines.isEmpty,
-           let idx = lyricsService.currentLineIndex,
-           idx >= 0, idx < lyricsService.lyricLines.count {
-            let line = lyricsService.lyricLines[idx]
-            let candidate: String
-            if AppSettings.shared.showRomanization, let romanized = line.romanized {
-                candidate = romanized
+           let index = lyricsService.currentLineIndex,
+           lyricsService.lyricLines.indices.contains(index) {
+            let line = lyricsService.lyricLines[index]
+            if !line.words.isEmpty {
+                for (wordIndex, word) in line.words.enumerated() {
+                    let display = AppSettings.shared.showRomanization
+                        ? (word.romanized ?? word.text)
+                        : word.text
+                    let color = wordIndex <= (lyricsService.currentWordIndex ?? -1)
+                        ? NSColor.white
+                        : NSColor.white.withAlphaComponent(0.45)
+                    let prefix = (wordIndex == 0 || line.words[wordIndex - 1].joinsNext) ? "" : " "
+                    result.append(NSAttributedString(
+                        string: prefix + display,
+                        attributes: [.foregroundColor: color]
+                    ))
+                }
             } else {
-                candidate = line.text
+                let text = AppSettings.shared.showRomanization
+                    ? (line.romanized ?? line.text)
+                    : line.text
+                if !text.isEmpty {
+                    result.append(NSAttributedString(string: text, attributes: white))
+                }
             }
-            if !candidate.isEmpty {
-                text = candidate
-            } else if let track = playbackEngine.currentTrack {
-                text = "\(track.title) — \(track.artist)"
-            } else {
-                text = "Player Studio"
-            }
-        } else if let track = playbackEngine.currentTrack {
-            text = "\(track.title) — \(track.artist)"
-        } else {
-            text = "Player Studio"
         }
 
-        let maxChars = 80
-        return text.count > maxChars
-            ? String(text.prefix(maxChars - 1)) + "…"
-            : text
+        if result.length == 0 {
+            let text = playbackEngine.currentTrack.map {
+                "\($0.title) — \($0.artist)"
+            } ?? "Player Studio"
+            result.append(NSAttributedString(string: text, attributes: white))
+        }
+
+        guard result.length > 80 else { return result }
+        let truncated = NSMutableAttributedString(
+            attributedString: result.attributedSubstring(from: NSRange(location: 0, length: 79))
+        )
+        truncated.append(NSAttributedString(string: "…", attributes: white))
+        return truncated
     }
 }

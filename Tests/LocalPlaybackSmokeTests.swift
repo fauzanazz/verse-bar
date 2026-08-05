@@ -92,12 +92,13 @@ final class LocalPlaybackSmokeTests: XCTestCase {
         waitUntil(timeout: 3) { PlaybackEngine.shared.currentTrack?.title == "First Song" }
         XCTAssertTrue(player.isPlaying)
 
-        // Stop releases the poll short-circuit and synchronously clears the
-        // published track (a later poll may republish external playback —
-        // that is the intended resume path).
+        // Stop releases the poll short-circuit but keeps the last track on screen,
+        // frozen and paused; only `isSourceActive` drops.
         player.stop()
         XCTAssertFalse(player.isEngaged)
-        XCTAssertNil(PlaybackEngine.shared.currentTrack)
+        XCTAssertEqual(PlaybackEngine.shared.currentTrack?.title, "First Song")
+        XCTAssertEqual(PlaybackEngine.shared.currentTrack?.isPaused, true)
+        XCTAssertFalse(PlaybackEngine.shared.isSourceActive)
     }
 
     func testKaraokeSwapPreservesPosition() throws {
@@ -124,18 +125,50 @@ final class LocalPlaybackSmokeTests: XCTestCase {
         // play state preserved.
         let positionBeforeOn = player.elapsed
         player.setKaraoke(true)
-        XCTAssertTrue(player.isKaraokeActive)
+        XCTAssertTrue(player.isKaraoke)
         XCTAssertTrue(player.isPlaying)
         XCTAssertEqual(player.elapsed, positionBeforeOn, accuracy: 0.3)
 
         // Toggle off: back to the original, position still preserved.
         let positionBeforeOff = player.elapsed
         player.setKaraoke(false)
-        XCTAssertFalse(player.isKaraokeActive)
+        XCTAssertFalse(player.isKaraoke)
         XCTAssertEqual(player.elapsed, positionBeforeOff, accuracy: 0.3)
 
         // The sidecar never became a library entry — one row per song.
         XCTAssertEqual(library.tracks.count, 2)
+    }
+
+    /// A karaoke session must not advertise itself on the next song when that
+    /// song has no instrumental — the original file is what plays.
+    func testKaraokeClearsOnTrackWithoutInstrumental() throws {
+        let library = LibraryService.shared
+        waitUntil(timeout: 15) { !library.isScanning }
+
+        AppSettings.shared.downloadFolderPath = tempDir.path
+        library.refresh()
+        waitUntil(timeout: 10) { !library.isScanning && library.tracks.count == 2 }
+
+        guard let first = library.tracks.first(where: { $0.title == "First Song" }),
+              let second = library.tracks.first(where: { $0.title == "Second Song" }) else {
+            XCTFail("Scanned tracks: \(library.tracks.map(\.title))")
+            return
+        }
+
+        let player = AudioPlayerService.shared
+        // Explicit two-track queue so next() lands on the sidecar-less song
+        // regardless of library sort order.
+        player.play([first, second], startAt: 0)
+        waitUntil(timeout: 5) { player.isPlaying }
+        player.setKaraoke(true)
+        XCTAssertTrue(player.isKaraoke)
+
+        player.next()
+        XCTAssertEqual(player.queue.current?.id, second.id)
+        XCTAssertFalse(player.isKaraoke)
+        XCTAssertTrue(player.isPlaying)
+        waitUntil(timeout: 5) { player.elapsed > 0.3 }
+        XCTAssertGreaterThan(player.elapsed, 0.3)
     }
 
     /// `stop()` (end of queue, repeated failures) drops the player but keeps

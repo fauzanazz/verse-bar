@@ -43,9 +43,13 @@ enum YouTubeArtworkResolver {
         return videoID
     }
 
+    static func thumbnailURL(videoID: String) -> URL? {
+        URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
+    }
+
     static func thumbnailURL(from watchURL: URL) -> URL? {
         guard let videoID = videoID(from: watchURL) else { return nil }
-        return URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
+        return thumbnailURL(videoID: videoID)
     }
 
 
@@ -77,7 +81,14 @@ class PlaybackEngine: ObservableObject {
     static let shared = PlaybackEngine()
     
     @Published var currentTrack: Track?
-    
+
+    /// True while some source (local player, MediaRemote, a browser) is actually
+    /// reporting this track. `currentTrack` is sticky and outlives it: when the
+    /// source disappears the track stays, frozen and paused, so the popover and
+    /// lyrics keep showing the last song. Consumers that must not advertise a
+    /// dead session (Music Island, listening stats) gate on this instead.
+    @Published private(set) var isSourceActive = false
+
     private var timer: Timer?
     private let settings = AppSettings.shared
     private var isPolling = false
@@ -178,9 +189,7 @@ class PlaybackEngine: ObservableObject {
         func trySource(at index: Int) {
             if index >= sources.count {
                 DispatchQueue.main.async {
-                    if self.currentTrack != nil {
-                        self.currentTrack = nil
-                    }
+                    self.freezeCurrentTrack()
                     self.isPolling = false
                 }
                 return
@@ -614,7 +623,11 @@ class PlaybackEngine: ObservableObject {
     }
     
     // MARK: - Track State Management
-    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double, isPaused: Bool, isEstimatedProgress: Bool, artworkData: Data? = nil, artworkId: String? = nil, artworkURL: URL? = nil) {
+    private func updateTrack(title: String, artist: String, duration: Double, elapsed: Double,
+                             isPaused: Bool, isEstimatedProgress: Bool, artworkData: Data? = nil,
+                             artworkId: String? = nil, artworkURL: URL? = nil,
+                             sourceActive: Bool = true) {
+        isSourceActive = sourceActive
         let now = Date()
         if let current = currentTrack, current.title == title, current.artist == artist {
             var updated = current
@@ -655,7 +668,7 @@ class PlaybackEngine: ObservableObject {
             newTrack.artworkURL = artworkURL
             currentTrack = newTrack
             Logger.info("🎵 Track Changed: \(title) - \(artist) (Duration: \(duration)s)", category: "playback")
-            triggerNotification(for: newTrack)
+            if sourceActive { triggerNotification(for: newTrack) }
         }
     }
     
@@ -672,32 +685,57 @@ class PlaybackEngine: ObservableObject {
                     artworkData: artworkData, artworkId: "local:\(fileID)", artworkURL: nil)
     }
 
+    /// Feeds a restored (saved) session into the engine at launch: the track
+    /// shows up paused with no source live, so the popover and lyrics display
+    /// it but Music Island and stats stay quiet. `isSourceActive` stays false.
+    func publishRestoredTrack(title: String, artist: String, duration: Double,
+                              elapsed: Double, artworkData: Data?, fileID: String) {
+        updateTrack(title: title, artist: artist, duration: duration, elapsed: elapsed,
+                    isPaused: true, isEstimatedProgress: false,
+                    artworkData: artworkData, artworkId: "local:\(fileID)", artworkURL: nil,
+                    sourceActive: false)
+    }
+
+    /// Releases the poll short-circuit and freezes the display rather than
+    /// clearing it: the last track stays on screen, paused.
     func clearLocalTrack() {
-        if currentTrack != nil { currentTrack = nil }
+        freezeCurrentTrack()
+    }
+
+    /// No source is reporting anymore. Keep the track visible, frozen at where it
+    /// stopped, so every consumer still shows the last song.
+    private func freezeCurrentTrack() {
+        isSourceActive = false
+        guard var track = currentTrack, !track.isPaused else { return }
+        let frozen = track.currentProgress      // must be read before flipping isPaused
+        track.isPaused = true
+        track.elapsedTime = frozen
+        track.lastUpdated = Date()
+        currentTrack = track
     }
 
     // MARK: - Player Actions
 
     func togglePlayPause() {
-        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.togglePlayPause(); return }
+        if AudioPlayerService.shared.ownsTransport { AudioPlayerService.shared.togglePlayPause(); return }
         MediaKeys.send(MediaKeys.play)
         runJSInBrowsers("(function(){var v=document.querySelector('video');if(!v)return;if(v.paused){v.play().catch(function(){});}else{v.pause();}})()")
     }
 
     func nextTrack() {
-        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.next(); return }
+        if AudioPlayerService.shared.ownsTransport { AudioPlayerService.shared.next(); return }
         MediaKeys.send(MediaKeys.next)
         runJSInBrowsers("(function(){var b=document.querySelector('.next-button')||document.querySelector('[aria-label=\\\"Next\\\"]');if(b)b.click();})()")
     }
 
     func previousTrack() {
-        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.previous(); return }
+        if AudioPlayerService.shared.ownsTransport { AudioPlayerService.shared.previous(); return }
         MediaKeys.send(MediaKeys.previous)
         runJSInBrowsers("(function(){var b=document.querySelector('.previous-button')||document.querySelector('[aria-label=\\\"Previous\\\"]');if(b)b.click();})()")
     }
 
     func seek(to seconds: TimeInterval) {
-        if AudioPlayerService.shared.isEngaged { AudioPlayerService.shared.seek(to: seconds); return }
+        if AudioPlayerService.shared.ownsTransport { AudioPlayerService.shared.seek(to: seconds); return }
         let clamped = max(0.0, seconds)
         if let track = currentTrack {
             var updated = track

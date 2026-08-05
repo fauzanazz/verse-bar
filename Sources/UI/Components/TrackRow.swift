@@ -13,6 +13,7 @@ struct TrackRow: View {
     let track: LibraryTrack
     let subtitle: String
     let isCurrent: Bool
+    var removeLabel: String = "Delete from Library"
     let onPlay: () -> Void
     let onPlayNext: () -> Void
     let onAddToQueue: () -> Void
@@ -21,6 +22,7 @@ struct TrackRow: View {
 
     @State private var isHovering = false
     @ObservedObject private var separation = VocalSeparationService.shared
+    @ObservedObject private var albumService = AlbumService.shared
 
     var body: some View {
         HStack(spacing: 12) {
@@ -57,29 +59,18 @@ struct TrackRow: View {
                     .help("Instrumental available")
             }
 
-            if isHovering || isCurrent {
-                Button(action: onPlay) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                .help("Play")
+            Button(action: onPlay) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 14))
             }
+            .buttonStyle(.plain)
+            .foregroundColor(.accentColor)
+            .opacity(isHovering || isCurrent ? 1 : 0)
+            .allowsHitTesting(isHovering || isCurrent)
+            .help("Play")
 
             Menu {
-                Button("Play Next", action: onPlayNext)
-                Button("Add to Queue", action: onAddToQueue)
-                Divider()
-                if VocalSeparationService.hasInstrumental(for: track) {
-                    Button("Remove Instrumental") { separation.removeInstrumental(for: track) }
-                } else {
-                    Button("Create Instrumental (Karaoke)") { separation.separate(track) }
-                        .disabled(separation.isBusy || VocalSeparationService.availability() == .unavailable)
-                }
-                Divider()
-                Button("Reveal in Finder", action: onReveal)
-                Button("Delete from Library", role: .destructive, action: onDelete)
+                rowMenu
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .medium))
@@ -99,8 +90,34 @@ struct TrackRow: View {
         )
         .onHover { hovering in isHovering = hovering }
         .contentShape(Rectangle())
+        .contextMenu { rowMenu }
         .onTapGesture(perform: onPlay)
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// Shared actions menu: ellipsis button and right-click context menu.
+    @ViewBuilder private var rowMenu: some View {
+        Button("Play Next", action: onPlayNext)
+        Button("Add to Queue", action: onAddToQueue)
+        Menu("Add to Album") {
+            if albumService.albums.isEmpty {
+                Button("No albums yet") {}.disabled(true)
+            } else {
+                ForEach(albumService.albums) { album in
+                    Button(album.title) { albumService.addTracks([track.id], to: album.id) }
+                }
+            }
+        }
+        Divider()
+        if VocalSeparationService.hasInstrumental(for: track) {
+            Button("Remove Instrumental") { separation.removeInstrumental(for: track) }
+        } else {
+            Button("Create Instrumental (Karaoke)") { separation.separate(track) }
+                .disabled(separation.isBusy || VocalSeparationService.availability() == .unavailable)
+        }
+        Divider()
+        Button("Reveal in Finder", action: onReveal)
+        Button(removeLabel, role: .destructive, action: onDelete)
     }
 
     @ViewBuilder private var artwork: some View {

@@ -4,14 +4,6 @@ import Combine
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
     
-    @Published var showArtist: Bool {
-        didSet { UserDefaults.standard.set(showArtist, forKey: "showArtist") }
-    }
-    
-    @Published var showTitle: Bool {
-        didSet { UserDefaults.standard.set(showTitle, forKey: "showTitle") }
-    }
-    
     @Published var launchAtLogin: Bool {
         didSet { UserDefaults.standard.set(launchAtLogin, forKey: "launchAtLogin") }
     }
@@ -75,8 +67,6 @@ class AppSettings: ObservableObject {
 
     private init() {
         UserDefaults.standard.register(defaults: [
-            "showArtist": true,
-            "showTitle": true,
             "launchAtLogin": false,
             "trackingSafari": true,
             "trackingChrome": true,
@@ -92,8 +82,6 @@ class AppSettings: ObservableObject {
             "playerVolume": 1.0
         ])
 
-        self.showArtist = UserDefaults.standard.bool(forKey: "showArtist")
-        self.showTitle = UserDefaults.standard.bool(forKey: "showTitle")
         self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         self.trackingSafari = UserDefaults.standard.bool(forKey: "trackingSafari")
         self.trackingChrome = UserDefaults.standard.bool(forKey: "trackingChrome")

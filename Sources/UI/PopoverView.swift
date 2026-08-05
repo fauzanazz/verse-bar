@@ -11,7 +11,6 @@ struct PopoverView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var downloadService = YouTubeDownloadService.shared
     @State private var manualSearchContext: ManualLyricsSearchContext?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -65,7 +64,7 @@ struct PopoverView: View {
             if let track = playbackEngine.currentTrack,
                lyricsService.plainLyrics == nil,
                !lyricsService.lyricLines.isEmpty {
-                syncControls(for: track)
+                LyricSyncControls(track: track)
             }
         }
         .padding(.bottom, 8)
@@ -281,78 +280,8 @@ struct PopoverView: View {
         } else if lyricsService.lyricLines.isEmpty {
             lyricsFailureContent(scale: scale)
         } else {
-            syncedLyrics(scale: scale)
+            SyncedLyricsView(scale: scale)
         }
-    }
-
-    private func syncedLyrics(scale: CGFloat) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 4 * scale) {
-                    ForEach(Array(lyricsService.lyricLines.enumerated()), id: \.offset) { index, line in
-                        LyricRow(
-                            line: line,
-                            isActive: lyricsService.currentLineIndex == index,
-                            scale: scale
-                        )
-                        .id(index)
-                        .onTapGesture {
-                            playbackEngine.seek(to: line.timestamp)
-                        }
-                    }
-                }
-                .padding(.horizontal, 8 * scale)
-                .padding(.vertical, 6 * scale)
-            }
-            .onReceive(lyricsService.$currentLineIndex) { newIndex in
-                guard let newIndex else { return }
-                DispatchQueue.main.async {
-                    if reduceMotion {
-                        proxy.scrollTo(newIndex, anchor: .center)
-                    } else {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(newIndex, anchor: .center)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func syncControls(for track: Track) -> some View {
-        let offset = settings.manualSyncOffset(for: track)
-
-        return HStack(spacing: 8) {
-            Text("Sync")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
-
-            Spacer()
-
-            Button {
-                settings.setManualSyncOffset(offset - 0.5, for: track)
-            } label: {
-                Image(systemName: "minus.circle.fill")
-            }
-            .buttonStyle(.plain)
-
-            Text(String(format: "%+.1fs", offset))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .frame(width: 48)
-
-            Button {
-                settings.setManualSyncOffset(offset + 0.5, for: track)
-            } label: {
-                Image(systemName: "plus.circle.fill")
-            }
-            .buttonStyle(.plain)
-
-            Button("Reset") {
-                settings.setManualSyncOffset(0.0, for: track)
-            }
-            .controlSize(.small)
-        }
-        .padding(.horizontal, 16)
     }
 
     private func modelFallbackContent(scale: CGFloat) -> some View {
@@ -422,7 +351,7 @@ struct PopoverView: View {
 }
 
 
-private struct ManualLyricsSearchView: View {
+struct ManualLyricsSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var lyricsService = LyricsService.shared
 

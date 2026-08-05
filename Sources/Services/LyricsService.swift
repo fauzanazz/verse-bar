@@ -25,6 +25,8 @@ class LyricsService: ObservableObject {
     @Published var lyricLines: [LyricLine] = []
     @Published var plainLyrics: String?
     @Published var currentLineIndex: Int?
+    @Published var currentWordIndex: Int?
+    @Published var currentWordFraction: Double = 0
     @Published var isFetching = false
     @Published var offlineMode = false
     /// Lookup outcome for the current track. The menu bar never renders this —
@@ -75,6 +77,8 @@ class LyricsService: ObservableObject {
             self.lyricLines = []
             self.plainLyrics = nil
             self.currentLineIndex = nil
+            self.currentWordIndex = nil
+            self.currentWordFraction = 0
             self.status = .idle
             self.lastTrackTitle = ""
             self.lastTrackArtist = ""
@@ -92,6 +96,8 @@ class LyricsService: ObservableObject {
         self.lyricLines = []
         self.plainLyrics = nil
         self.currentLineIndex = nil
+        self.currentWordIndex = nil
+        self.currentWordFraction = 0
         self.status = .searching
         
         Logger.info("📀 Fetching lyrics for: \(track.title) - \(track.artist)", category: "lyrics")
@@ -100,7 +106,7 @@ class LyricsService: ObservableObject {
     
     private func startSyncTimer() {
         syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             self?.updateActiveLyricIndex()
         }
     }
@@ -109,6 +115,12 @@ class LyricsService: ObservableObject {
         guard let track = playbackEngine.currentTrack, !lyricLines.isEmpty else {
             if currentLineIndex != nil {
                 currentLineIndex = nil
+            }
+            if currentWordIndex != nil {
+                currentWordIndex = nil
+            }
+            if currentWordFraction != 0 {
+                currentWordFraction = 0
             }
             return
         }
@@ -127,6 +139,28 @@ class LyricsService: ObservableObject {
         
         if currentLineIndex != foundIndex {
             currentLineIndex = foundIndex
+        }
+
+        var wordIndex: Int?
+        var fraction: Double = 0
+        if let index = foundIndex {
+            let words = lyricLines[index].words
+            wordIndex = words.lastIndex(where: { $0.start <= elapsed })
+            if let w = wordIndex {
+                let word = words[w]
+                let span = max(word.end - word.start, 0.001)
+                let raw = min(max((elapsed - word.start) / span, 0), 1)
+                // ponytail: kuantisasi ke jumlah karakter kata — nilai antara tidak
+                // terlihat, dan ini menahan @Published dari 20 update/detik.
+                let steps = Double(max(word.text.count, 1))
+                fraction = (raw * steps).rounded(.down) / steps
+            }
+        }
+        if currentWordIndex != wordIndex {
+            currentWordIndex = wordIndex
+        }
+        if currentWordFraction != fraction {
+            currentWordFraction = fraction
         }
     }
     
@@ -156,7 +190,23 @@ class LyricsService: ObservableObject {
             do {
                 let data = try Data(contentsOf: cacheFile)
                 let lines = try JSONDecoder().decode([CachedLyricLine].self, from: data)
-                self.lyricLines = lines.map { LyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized ?? Self.romanize($0.text)) }
+                self.lyricLines = lines.map { cached in
+                    if let words = cached.words, !words.isEmpty {
+                        // Timing asli tersimpan di cache — pakai langsung.
+                        return LyricLine(
+                            timestamp: cached.timestamp,
+                            text: cached.text,
+                            romanized: cached.romanized ?? Self.romanize(cached.text),
+                            words: words.map {
+                                LyricWord(text: $0.text, romanized: $0.romanized, start: $0.start, end: $0.end, joinsNext: $0.joinsNext ?? false)
+                            }
+                        )
+                    }
+                    // Cache lama tanpa words → estimasi ulang.
+                    return LyricLine.makeLines([
+                        LyricLine.RawEntry(timestamp: cached.timestamp, body: cached.text, romanized: cached.romanized)
+                    ])[0]
+                }
                 self.status = self.lyricLines.isEmpty ? .notFound : .found
                 Logger.info("✅ Loaded cached lyrics for \(track.title) (\(self.lyricLines.count) lines)", category: "lyrics")
                 return
@@ -172,6 +222,26 @@ class LyricsService: ObservableObject {
             return
         }
         
+        // Apple Music syllable data first; LRCLIB exact get as fallback.
+        self.isFetching = true
+        AppleLyricsService.fetch(title: track.title, artist: track.artist, duration: track.duration) { [weak self] lines in
+            guard let self else { return }
+            guard self.isCurrentTrack(track) else { return }
+            guard let lines, !lines.isEmpty else {
+                self.fetchFromLRCLIB(track: track, cacheFile: cacheFile)
+                return
+            }
+            self.isFetching = false
+            self.lyricLines = lines
+            self.plainLyrics = nil
+            self.status = .found
+            self.updateActiveLyricIndex()
+            self.cacheLines(lines, to: cacheFile)
+            Logger.info("✅ Apple syllable lyrics for \(track.title) (\(lines.count) lines)", category: "lyrics")
+        }
+    }
+
+    private func fetchFromLRCLIB(track: Track, cacheFile: URL) {
         // If the artist is generic, skip exact get and go to search fallback
         if track.artist == "Unknown Artist" || track.artist == "YouTube Music" || track.artist == "YouTube" {
             self.isFetching = true
@@ -338,6 +408,8 @@ class LyricsService: ObservableObject {
             self.plainLyrics = nil
             self.lyricLines = []
             self.currentLineIndex = nil
+            self.currentWordIndex = nil
+            self.currentWordFraction = 0
 
             if allowModelFallback, let query = self.coverFallbackQuery(for: track) {
                 Logger.info("LRCLIB search fallback failed; trying model normalization", category: "lyrics")
@@ -419,6 +491,8 @@ class LyricsService: ObservableObject {
                         self.plainLyrics = nil
                         self.lyricLines = []
                         self.currentLineIndex = nil
+                        self.currentWordIndex = nil
+                        self.currentWordFraction = 0
                         self.status = .notFound
                         self.isFetching = false
                     }
@@ -630,6 +704,8 @@ class LyricsService: ObservableObject {
             isFetching = false
             lyricLines = []
             currentLineIndex = nil
+            currentWordIndex = nil
+            currentWordFraction = 0
             self.plainLyrics = plainLyrics
             status = .plainFound
             return true
@@ -674,12 +750,7 @@ class LyricsService: ObservableObject {
                     self.lyricLines = parsedLines
                     self.status = .found
                     Logger.info("✅ Loaded \(parsedLines.count) lyric lines for \(track.title)", category: "lyrics")
-                    // Save to local cache
-                    let cachedLines = parsedLines.map { CachedLyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized) }
-                    if let cachedData = try? JSONEncoder().encode(cachedLines) {
-                        try? cachedData.write(to: cacheFile)
-                        Logger.info("💾 Saved cached lyrics for \(track.title)", category: "lyrics")
-                    }
+                    self.cacheLines(parsedLines, to: cacheFile)
                 }
             }
         } catch {
@@ -691,16 +762,30 @@ class LyricsService: ObservableObject {
             }
         }
     }
+
+    private func cacheLines(_ lines: [LyricLine], to cacheFile: URL) {
+        let cached = lines.map {
+            CachedLyricLine(timestamp: $0.timestamp, text: $0.text, romanized: $0.romanized,
+                            words: $0.words.map {
+                                CachedLyricWord(text: $0.text, romanized: $0.romanized,
+                                                start: $0.start, end: $0.end, joinsNext: $0.joinsNext)
+                            })
+        }
+        if let data = try? JSONEncoder().encode(cached) {
+            try? data.write(to: cacheFile)
+            Logger.info("💾 Saved cached lyrics", category: "lyrics")
+        }
+    }
     
     // MARK: - LRC File Parser
     private func parseLRC(_ lrcContent: String) -> [LyricLine] {
         guard !lrcContent.isEmpty else { return [] }
         
-        var lines: [LyricLine] = []
         // Match [mm:ss.xx] or [mm:ss] format
         let regex = try! NSRegularExpression(pattern: "^\\[(\\d+):(\\d+)(?:\\.(\\d+))?\\](.*)$", options: [])
         
         let rawLines = lrcContent.components(separatedBy: .newlines)
+        var entries: [LyricLine.RawEntry] = []
         
         for rawLine in rawLines {
             let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -710,32 +795,17 @@ class LyricsService: ObservableObject {
             if let match = regex.firstMatch(in: trimmed, options: [], range: range) {
                 let minStr = (trimmed as NSString).substring(with: match.range(at: 1))
                 let secStr = (trimmed as NSString).substring(with: match.range(at: 2))
-                
-                var fractional = 0.0
-                if match.range(at: 3).location != NSNotFound {
-                    let fracStr = (trimmed as NSString).substring(with: match.range(at: 3))
-                    // Handle both centiseconds (2 digits) and milliseconds (3 digits)
-                    if fracStr.count == 2 {
-                        fractional = (Double(fracStr) ?? 0.0) / 100.0
-                    } else if fracStr.count == 3 {
-                        fractional = (Double(fracStr) ?? 0.0) / 1000.0
-                    } else {
-                        fractional = (Double(fracStr) ?? 0.0) / pow(10.0, Double(fracStr.count))
-                    }
-                }
-                
-                let minutes = Double(minStr) ?? 0.0
-                let seconds = Double(secStr) ?? 0.0
-                let timestamp = minutes * 60.0 + seconds + fractional
-                
-                let text = (trimmed as NSString).substring(with: match.range(at: 4)).trimmingCharacters(in: .whitespacesAndNewlines)
-
-                lines.append(LyricLine(timestamp: timestamp, text: text, romanized: Self.romanize(text)))
+                let fraction: String? = match.range(at: 3).location != NSNotFound
+                    ? (trimmed as NSString).substring(with: match.range(at: 3))
+                    : nil
+                let timestamp = LyricLine.parseTime(minutes: minStr, seconds: secStr, fraction: fraction)
+                // Body mentah: tag word-level <mm:ss.xx> harus lolos ke makeLines.
+                let body = (trimmed as NSString).substring(with: match.range(at: 4))
+                entries.append(LyricLine.RawEntry(timestamp: timestamp, body: body))
             }
         }
 
-        // Sort lines chronologically
-        return lines.sorted(by: { $0.timestamp < $1.timestamp })
+        return LyricLine.makeLines(entries)
     }
 
     // MARK: - Romanization
@@ -798,8 +868,32 @@ private struct OllamaNormalizedTrack: Decodable {
     let artist: String
 }
 
+struct CachedLyricWord: Codable {
+    let text: String
+    let romanized: String?
+    let start: TimeInterval
+    let end: TimeInterval
+    let joinsNext: Bool?  // optional — cache files written before this field still decode
+
+    init(text: String, romanized: String?, start: TimeInterval, end: TimeInterval, joinsNext: Bool? = nil) {
+        self.text = text
+        self.romanized = romanized
+        self.start = start
+        self.end = end
+        self.joinsNext = joinsNext
+    }
+}
+
 struct CachedLyricLine: Codable {
     let timestamp: TimeInterval
     let text: String
     let romanized: String?
+    let words: [CachedLyricWord]?  // nil untuk cache lama — tetap ter-decode
+
+    init(timestamp: TimeInterval, text: String, romanized: String?, words: [CachedLyricWord]?) {
+        self.timestamp = timestamp
+        self.text = text
+        self.romanized = romanized
+        self.words = words
+    }
 }

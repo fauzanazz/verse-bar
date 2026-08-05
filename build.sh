@@ -35,6 +35,8 @@ swiftc -sdk "$SDK_PATH" \
     Sources/Models/AppSettings.swift \
     Sources/Models/LibraryTrack.swift \
     Sources/Models/PlayQueue.swift \
+    Sources/Models/Album.swift \
+    Sources/Models/ListeningCapsule.swift \
     Sources/Services/PlaybackEngine.swift \
     Sources/Services/DiscordPresenceService.swift \
     Sources/Services/NowPlayingService.swift \
@@ -46,6 +48,8 @@ swiftc -sdk "$SDK_PATH" \
     Sources/Services/YouTubeSearchService.swift \
     Sources/Services/YouTubeStreamService.swift \
     Sources/Services/LibraryService.swift \
+    Sources/Services/AlbumService.swift \
+    Sources/Services/AppleLyricsService.swift \
     Sources/Services/AudioPlayerService.swift \
     Sources/Services/VocalSeparationService.swift \
     Sources/UI/Components/GlassmorphicView.swift \
@@ -55,6 +59,7 @@ swiftc -sdk "$SDK_PATH" \
     Sources/UI/PopoverView.swift \
     Sources/UI/SettingsView.swift \
     Sources/UI/SoundCapsuleView.swift \
+    Sources/UI/SoundCapsuleDetailView.swift \
     Sources/UI/StatusItemManager.swift \
     Sources/UI/TouchBarController.swift \
     Sources/UI/NotchIslandView.swift \
@@ -65,6 +70,8 @@ swiftc -sdk "$SDK_PATH" \
     Sources/UI/MainWindowView.swift \
     Sources/UI/HomeView.swift \
     Sources/UI/LibraryView.swift \
+    Sources/UI/AlbumsView.swift \
+    Sources/UI/AlbumDetailView.swift \
     Sources/UI/BrowseView.swift \
     Sources/UI/NowPlayingView.swift \
     Sources/Utilities/AppleScriptRunner.swift \

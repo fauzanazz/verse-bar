@@ -7,8 +7,8 @@ struct NowPlayingView: View {
 
     @ObservedObject private var playbackEngine = PlaybackEngine.shared
     @ObservedObject private var lyricsService = LyricsService.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLyrics = true
+    @State private var showManualLyricsSearch = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,6 +24,20 @@ struct NowPlayingView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 Spacer()
+                if playbackEngine.currentTrack != nil {
+                    Button {
+                        lyricsService.cancelModelFallback()
+                        showManualLyricsSearch = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .disabled(lyricsService.isFetching)
+                    .help("Choose different lyrics")
+                    .accessibilityLabel("Choose different lyrics")
+                }
                 Button {
                     showLyrics.toggle()
                 } label: {
@@ -60,10 +74,21 @@ struct NowPlayingView: View {
 
                     if showLyrics {
                         lyricsBlock
+
+                        if let track = playbackEngine.currentTrack,
+                           lyricsService.plainLyrics == nil,
+                           !lyricsService.lyricLines.isEmpty {
+                            LyricSyncControls(track: track)
+                        }
                     }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity)
+            }
+        }
+        .sheet(isPresented: $showManualLyricsSearch) {
+            if let track = playbackEngine.currentTrack {
+                ManualLyricsSearchView(track: track)
             }
         }
     }
@@ -113,46 +138,31 @@ struct NowPlayingView: View {
             }
             .frame(maxHeight: 320)
         } else if lyricsService.lyricLines.isEmpty {
-            Text("Lyrics not found")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
-                .padding(.vertical, 40)
+            VStack(spacing: 12) {
+                Text("Lyrics not found")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                if canSearchManually {
+                    Button("Search lyrics manually") {
+                        showManualLyricsSearch = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(.vertical, 40)
         } else {
-            syncedLyrics
+            SyncedLyricsView(scale: 1.3)
+                .frame(height: 360)
         }
     }
 
-    private var syncedLyrics: some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 4 * 1.3) {
-                    ForEach(Array(lyricsService.lyricLines.enumerated()), id: \.offset) { index, line in
-                        LyricRow(
-                            line: line,
-                            isActive: lyricsService.currentLineIndex == index,
-                            scale: 1.3
-                        )
-                        .id(index)
-                        .onTapGesture {
-                            playbackEngine.seek(to: line.timestamp)
-                        }
-                    }
-                }
-                .padding(.horizontal, 8 * 1.3)
-                .padding(.vertical, 6 * 1.3)
-            }
-            .onReceive(lyricsService.$currentLineIndex) { newIndex in
-                guard let newIndex else { return }
-                DispatchQueue.main.async {
-                    if reduceMotion {
-                        proxy.scrollTo(newIndex, anchor: .center)
-                    } else {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(newIndex, anchor: .center)
-                        }
-                    }
-                }
-            }
+    private var canSearchManually: Bool {
+        switch lyricsService.status {
+        case .notFound, .error:
+            return true
+        default:
+            return false
         }
     }
 }

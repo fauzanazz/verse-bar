@@ -81,6 +81,11 @@ final class NotchIslandController: NSObject {
             .sink { [weak self] _ in self?.applyVisibility() }
             .store(in: &cancellables)
 
+        playbackEngine.$isSourceActive
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applyVisibility() }
+            .store(in: &cancellables)
+
         lyricsService.$currentLineIndex
             .combineLatest(lyricsService.$lyricLines, settings.$showRomanization)
             .receive(on: DispatchQueue.main)
@@ -100,7 +105,7 @@ final class NotchIslandController: NSObject {
     // MARK: - Visibility
 
     private func applyVisibility() {
-        let wantsVisible = settings.showNotchIsland && playbackEngine.currentTrack != nil
+        let wantsVisible = settings.showNotchIsland && playbackEngine.currentTrack != nil && playbackEngine.isSourceActive
         if wantsVisible {
             ensurePanel()
             panel?.orderFrontRegardless()

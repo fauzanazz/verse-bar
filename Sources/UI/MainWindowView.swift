@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 
 enum MainSection: String, CaseIterable, Identifiable {
-    case home, browse, library, capsule, settings
+    case home, browse, library, albums, capsule, settings
     var id: String { rawValue }
 }
 
@@ -25,10 +25,6 @@ func timeString(_ t: TimeInterval) -> String {
 struct MainWindowView: View {
     @ObservedObject private var router = MainWindowRouter.shared
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-
-    private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-    @State private var sliderValue: Double = 0
-    @State private var isScrubbing = false
     /// Karaoke refusals are too long for the crowded transport bar; they pop
     /// over the mic button instead of being truncated inline.
     @State private var showKaraokeError = false
@@ -40,6 +36,7 @@ struct MainWindowView: View {
                     Label("Home", systemImage: "house.fill").tag(MainSection.home)
                     Label("Browse", systemImage: "square.grid.2x2.fill").tag(MainSection.browse)
                     Label("Library", systemImage: "music.note.list").tag(MainSection.library)
+                    Label("Albums", systemImage: "square.stack.fill").tag(MainSection.albums)
                     Divider()
                     Label("Sound Capsule", systemImage: "chart.bar.fill").tag(MainSection.capsule)
                     Label("Preferences", systemImage: "gearshape.fill").tag(MainSection.settings)
@@ -69,6 +66,7 @@ struct MainWindowView: View {
                     case .home: HomeView(onBrowse: { router.section = .browse })
                     case .browse: BrowseView()
                     case .library: LibraryView()
+                    case .albums: AlbumsView()
                     case .capsule: centered(SoundCapsuleView())
                     case .settings: centered(SettingsView())
                     }
@@ -84,92 +82,73 @@ struct MainWindowView: View {
     // MARK: - Transport bar
 
     private var transportBar: some View {
-        HStack(spacing: 14) {
-            nowPlayingButton
+        VStack(spacing: 8) {
+            HStack(spacing: 14) {
+                nowPlayingButton
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(audioPlayer.queue.current?.title ?? "Nothing playing")
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                Text(audioPlayer.queue.current?.artist ?? "Pilih lagu dari Library untuk mulai memutar")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(width: 220, alignment: .leading)
-
-            Spacer()
-
-            HStack(spacing: 12) {
-                transportButton("shuffle", isOn: audioPlayer.queue.isShuffled) {
-                    audioPlayer.setShuffled(!audioPlayer.queue.isShuffled)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(audioPlayer.queue.current?.title ?? "Nothing playing")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Text(audioPlayer.queue.current?.artist ?? "Pilih lagu dari Library untuk mulai memutar")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
-                transportButton("backward.fill") { audioPlayer.previous() }
+                .frame(maxWidth: 220, alignment: .leading)
+
+                Spacer()
+
+                HStack(spacing: 16) {
+                    transportButton("shuffle", isOn: audioPlayer.queue.isShuffled) {
+                        audioPlayer.setShuffled(!audioPlayer.queue.isShuffled)
+                    }
+                    transportButton("backward.fill") { audioPlayer.previous() }
+                    Button {
+                        audioPlayer.togglePlayPause()
+                    } label: {
+                        Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(Color.primary))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!hasTrack)
+                    .accessibilityLabel(audioPlayer.isPlaying ? "Pause" : "Play")
+                    transportButton("forward.fill") { audioPlayer.next() }
+                    transportButton(audioPlayer.queue.repeatMode == .one ? "repeat.1" : "repeat", isOn: audioPlayer.queue.repeatMode != .off) {
+                        audioPlayer.cycleRepeatMode()
+                    }
+                }
+
+                Spacer()
+
+                karaokeControl
+
                 Button {
-                    audioPlayer.togglePlayPause()
+                    router.showNowPlaying.toggle()
                 } label: {
-                    Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 22, weight: .semibold))
+                    Image(systemName: "quote.bubble")
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.primary)
-                .disabled(!hasTrack)
-                .accessibilityLabel(audioPlayer.isPlaying ? "Pause" : "Play")
-                transportButton("forward.fill") { audioPlayer.next() }
-                transportButton(audioPlayer.queue.repeatMode == .one ? "repeat.1" : "repeat", isOn: audioPlayer.queue.repeatMode != .off) {
-                    audioPlayer.cycleRepeatMode()
-                }
+                .foregroundColor(router.showNowPlaying ? .accentColor : .secondary)
+                .help("Lyrics")
+                .accessibilityLabel("Lyrics")
+
+                Image(systemName: "speaker.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Slider(value: $audioPlayer.volume, in: 0...1)
+                    .frame(width: 90)
             }
+            .frame(height: 56)
 
-            Spacer()
-
-            Text(timeString(audioPlayer.elapsed))
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .monospacedDigit()
-
-            Slider(value: $sliderValue, in: 0...max(duration, 1)) { editing in
-                if editing {
-                    isScrubbing = true
-                } else {
-                    isScrubbing = false
-                    audioPlayer.seek(to: sliderValue)
-                }
-            }
-            .frame(maxWidth: 280)
-            .disabled(!hasTrack)
-
-            Text(timeString(duration))
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .monospacedDigit()
-
-            Spacer()
-
-            karaokeControl
-
-            Button {
-                router.showNowPlaying.toggle()
-            } label: {
-                Image(systemName: "quote.bubble")
-                    .font(.system(size: 14, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(router.showNowPlaying ? .accentColor : .secondary)
-            .help("Lyrics")
-            .accessibilityLabel("Lyrics")
-
-            Image(systemName: "speaker.fill")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            Slider(value: $audioPlayer.volume, in: 0...1)
-                .frame(width: 90)
+            SeekBar()
         }
-        .frame(height: 64)
         .padding(.horizontal, 16)
-        .onReceive(ticker) { _ in
-            if !isScrubbing { sliderValue = audioPlayer.elapsed }
-        }
+        .padding(.vertical, 10)
         // Async failures (demucs exiting mid-run) never pass through the button
         // action, so the popover also follows the state.
         .onChange(of: karaokeFailure) { _, new in showKaraokeError = new != nil }
@@ -179,10 +158,6 @@ struct MainWindowView: View {
     @ObservedObject private var separation = VocalSeparationService.shared
 
     private var hasTrack: Bool { audioPlayer.queue.current != nil }
-
-    private var duration: TimeInterval {
-        audioPlayer.queue.current?.duration ?? 0
-    }
 
     private var nowPlayingButton: some View {
         Button {
@@ -232,7 +207,7 @@ struct MainWindowView: View {
             }
             .foregroundColor(karaokeFailure != nil ? .red : (audioPlayer.isKaraoke ? .accentColor : .secondary))
             .help(karaokeFailure
-                  ?? (audioPlayer.isKaraokeActive ? "Karaoke: instrumental" : "Karaoke (remove vocals)"))
+                  ?? (audioPlayer.isKaraoke ? "Karaoke: instrumental" : "Karaoke (remove vocals)"))
             .accessibilityLabel("Karaoke")
             .popover(isPresented: $showKaraokeError, arrowEdge: .top) {
                 Text(karaokeFailure ?? "")
@@ -269,5 +244,50 @@ struct MainWindowView: View {
             content.frame(maxWidth: 560)
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// Timeline row: elapsed – scrubbing slider – duration. Owns its own 0.5 s
+/// ticker so the transport bar's progress updates never re-render the whole
+/// window (which was rebuilding every open row menu 2×/s and collapsing the
+/// "Add to Album" submenu on hover).
+private struct SeekBar: View {
+    @ObservedObject private var audioPlayer = AudioPlayerService.shared
+    private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    @State private var sliderValue: Double = 0
+    @State private var isScrubbing = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            Text(timeString(audioPlayer.elapsed))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+
+            Slider(value: $sliderValue, in: 0...max(duration, 1)) { editing in
+                if editing {
+                    isScrubbing = true
+                } else {
+                    isScrubbing = false
+                    audioPlayer.seek(to: sliderValue)
+                }
+            }
+            .frame(maxWidth: 400)
+            .disabled(audioPlayer.queue.current == nil)
+
+            Text(timeString(duration))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+            Spacer()
+        }
+        .onReceive(ticker) { _ in
+            if !isScrubbing { sliderValue = audioPlayer.elapsed }
+        }
+    }
+
+    private var duration: TimeInterval {
+        audioPlayer.queue.current?.duration ?? 0
     }
 }

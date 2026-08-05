@@ -14,6 +14,20 @@ import MediaPlayer
 final class AudioPlayerService: NSObject, ObservableObject {
     static let shared = AudioPlayerService()
 
+    private struct PlaybackSnapshot: Codable {
+        var queue: PlayQueue
+        var elapsed: TimeInterval
+    }
+
+    private static let stateURL = FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("com.playerstudio.PlayerStudio", isDirectory: true)
+        .appendingPathComponent("PlaybackState.json")
+
+    /// Position the restored track resumes from; consumed by the first
+    /// `startCurrent()` after launch and cleared by every real `load()`.
+    private var pendingResume: TimeInterval = 0
+
     @Published private(set) var queue = PlayQueue()
     @Published private(set) var isPlaying = false
     @Published private(set) var isKaraoke = false
@@ -38,30 +52,67 @@ final class AudioPlayerService: NSObject, ObservableObject {
     private var refreshInFlightForItem: AVPlayerItem?
 
     var isEngaged: Bool { player != nil }
+
+    /// The local player owns the transport: it is live, or it holds a restored
+    /// queue and no external source has taken over. `isEngaged` stays narrow —
+    /// widening it would kill browser polling forever after a restore.
+    var ownsTransport: Bool {
+        player != nil || (queue.current != nil && !PlaybackEngine.shared.isSourceActive)
+    }
+
+    /// ponytail: saved at track change / play-pause / stop / quit, not on every
+    /// tick — a crash mid-song loses the position, nothing else.
+    private func save() {
+        // XCTest processes share the developer's Application Support path;
+        // fixtures must never replace the real app's saved queue.
+        guard NSClassFromString("XCTestCase") == nil else { return }
+        try? FileManager.default.createDirectory(
+            at: Self.stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard queue.current != nil else { try? FileManager.default.removeItem(at: Self.stateURL); return }
+        guard let data = try? JSONEncoder().encode(PlaybackSnapshot(queue: queue, elapsed: elapsed))
+        else { return }
+        try? data.write(to: Self.stateURL)
+    }
+
+    /// Flush the exact quit-time position; called from `applicationWillTerminate`.
+    func saveState() { save() }
+
     var elapsed: TimeInterval {
-        let t = player?.currentTime().seconds
-        return (t?.isFinite == true) ? t! : 0
+        guard let t = player?.currentTime().seconds, t.isFinite else { return pendingResume }
+        return t
     }
 
     /// Which file backs playback: the karaoke sidecar when enabled and present,
-    /// else the original. Falling back silently keeps a karaoke session alive
-    /// across tracks that have no instrumental yet.
+    /// else the original. The fallback is defensive only — `startCurrent` clears
+    /// `isKaraoke` for a track with no sidecar before we get here.
     private static func audioURL(for track: LibraryTrack, karaoke: Bool) -> URL {
         guard karaoke else { return track.url }
         let instrumental = VocalSeparationService.instrumentalURL(for: track)
         return FileManager.default.fileExists(atPath: instrumental.path) ? instrumental : track.url
     }
 
-    /// True only when the *current* track is actually playing its instrumental.
-    var isKaraokeActive: Bool {
-        guard isKaraoke, let track = queue.current else { return false }
-        return VocalSeparationService.hasInstrumental(for: track)
-    }
 
     private override init() {
         volume = AppSettings.shared.playerVolume
         super.init()
         setupRemoteCommands()
+
+        // Skip under xctest so the suite never inherits a stale queue from the
+        // developer's real state file (same guard triggerNotification uses).
+        guard NSClassFromString("XCTestCase") == nil else { return }
+        guard let data = try? Data(contentsOf: Self.stateURL),
+              let snapshot = try? JSONDecoder().decode(PlaybackSnapshot.self, from: data),
+              let track = snapshot.queue.current else { return }
+        queue = snapshot.queue
+        pendingResume = snapshot.elapsed
+        // Deferred: PlaybackEngine.shared may still be initializing this singleton's peers.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            PlaybackEngine.shared.publishRestoredTrack(
+                title: track.title, artist: track.artist, duration: track.duration,
+                elapsed: snapshot.elapsed, artworkData: self.artworkData(for: track), fileID: track.id
+            )
+        }
     }
 
     // MARK: - Playback control
@@ -75,7 +126,7 @@ final class AudioPlayerService: NSObject, ObservableObject {
 
     func togglePlayPause() {
         // `stop()` tears the player down but keeps the queue: press play = restart the current track.
-        guard let player else { startCurrent(); return }
+        guard let player else { startCurrent(resumeAt: pendingResume); return }
         if player.timeControlStatus == .paused {
             player.play()
             isPlaying = true
@@ -85,6 +136,7 @@ final class AudioPlayerService: NSObject, ObservableObject {
             isPlaying = false
         }
         publishTrack()
+        save()
     }
 
     func next() {
@@ -132,6 +184,7 @@ final class AudioPlayerService: NSObject, ObservableObject {
         MPNowPlayingInfoCenter.default().playbackState = .stopped
         // Release the poll short-circuit so external playback tracking resumes.
         PlaybackEngine.shared.clearLocalTrack()
+        save()
     }
 
     func setShuffled(_ on: Bool) {
@@ -178,7 +231,7 @@ final class AudioPlayerService: NSObject, ObservableObject {
     /// Refusals and progress are reported through `VocalSeparationService.state`.
     func setKaraoke(_ on: Bool) {
         guard isKaraoke != on else { return }
-        guard let track = queue.current else { isKaraoke = on; return }
+        guard let track = queue.current else { return }
         if on, !VocalSeparationService.hasInstrumental(for: track) {
             VocalSeparationService.shared.separate(track, autoEnable: true)
             return
@@ -197,15 +250,21 @@ final class AudioPlayerService: NSObject, ObservableObject {
 
     // MARK: - Internals
 
-    private func startCurrent() {
+    private func startCurrent(resumeAt: TimeInterval = 0) {
         guard let track = queue.current else { stop(); return }
-        load(url: Self.audioURL(for: track, karaoke: isKaraoke), resumeAt: 0)
+        // A karaoke session carries only to tracks that actually have an
+        // instrumental — otherwise the flag would advertise karaoke while the
+        // original file plays.
+        if isKaraoke, !VocalSeparationService.hasInstrumental(for: track) { isKaraoke = false }
+        load(url: Self.audioURL(for: track, karaoke: isKaraoke), resumeAt: resumeAt)
         Logger.info("▶️ Playing \(track.artist) — \(track.title)", category: "playback")
+        save()
     }
 
     /// Fresh AVPlayerItem + observers, then play. `resumeAt > 0` is the
     /// stream-refresh path (expired URL replaced mid-song).
     private func load(url: URL, resumeAt: TimeInterval) {
+        pendingResume = 0
         teardownItemObservers()
         let item = AVPlayerItem(url: url)
         let active = player ?? AVPlayer()

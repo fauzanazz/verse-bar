@@ -57,7 +57,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ListeningStatsService.shared.flush()
         DiscordPresenceService.shared.stop()
+        AudioPlayerService.shared.saveState()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

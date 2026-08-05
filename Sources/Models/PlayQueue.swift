@@ -16,7 +16,7 @@ enum RepeatMode: String, Codable {
 /// - `setShuffled`: keeps the current track; unshuffling restores index order.
 /// - `insertNext`/`append`: append to `tracks`; `insertNext` slots the new
 ///   index right after `position` so it plays next.
-struct PlayQueue: Equatable {
+struct PlayQueue: Equatable, Codable {
     private(set) var tracks: [LibraryTrack] = []
     private(set) var order: [Int] = []       // indices into `tracks`
     private(set) var position: Int = 0       // index into `order`

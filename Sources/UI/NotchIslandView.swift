@@ -37,6 +37,15 @@ struct NotchIslandView: View {
         return text.isEmpty ? nil : text
     }
 
+    private var currentWords: [LyricWord] {
+        guard !lyricsService.lyricLines.isEmpty,
+              let index = lyricsService.currentLineIndex,
+              lyricsService.lyricLines.indices.contains(index) else {
+            return []
+        }
+        return lyricsService.lyricLines[index].words
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -80,12 +89,28 @@ struct NotchIslandView: View {
                 .foregroundColor(.white.opacity(0.85))
                 .frame(width: 18)
 
-            Text(currentLyric ?? trackSummary ?? "Player Studio")
+            if !currentWords.isEmpty {
+                karaokeText(
+                    words: currentWords,
+                    activeIndex: lyricsService.currentWordIndex,
+                    activeFraction: lyricsService.currentWordFraction,
+                    romanized: settings.showRomanization,
+                    sung: .white,
+                    upcoming: .white.opacity(0.4),
+                    emphasizeCurrent: false
+                )
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(currentLyric ?? trackSummary ?? "Player Studio")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .frame(height: 22)
     }
@@ -137,7 +162,21 @@ struct NotchIslandView: View {
                 }
             }
 
-            if let lyric = currentLyric {
+            if !currentWords.isEmpty {
+                karaokeText(
+                    words: currentWords,
+                    activeIndex: lyricsService.currentWordIndex,
+                    activeFraction: lyricsService.currentWordFraction,
+                    romanized: settings.showRomanization,
+                    sung: .white,
+                    upcoming: .white.opacity(0.35),
+                    emphasizeCurrent: false
+                )
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let lyric = currentLyric {
                 Text(lyric)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.9))

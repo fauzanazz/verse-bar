@@ -8,7 +8,6 @@ class StatusItemManager: NSObject {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     
-    private var playbackEngine = PlaybackEngine.shared
     private var settings = AppSettings.shared
     private var cancellables = Set<AnyCancellable>()
     
@@ -40,10 +39,7 @@ class StatusItemManager: NSObject {
             if let image = menuBarIcon ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: "Player Studio") {
                 image.isTemplate = true
                 button.image = image
-                button.imagePosition = .imageRight
             }
-            
-            updateMenuBarText()
         }
     }
     
@@ -85,23 +81,6 @@ class StatusItemManager: NSObject {
     }
     
     private func setupBindings() {
-        // Observe track changes
-        playbackEngine.$currentTrack
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateMenuBarText()
-            }
-            .store(in: &cancellables)
-        
-        // Observe display setting changes
-        settings.$showArtist
-            .combineLatest(settings.$showTitle)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateMenuBarText()
-            }
-            .store(in: &cancellables)
-
         // Touch Bar tap → toggle popover
         NotificationCenter.default.addObserver(
             self,
@@ -204,30 +183,5 @@ class StatusItemManager: NSObject {
     
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
-    }
-    
-    // MARK: - Menu Bar Styling & Truncation
-    private func updateMenuBarText() {
-        guard let button = statusItem.button else { return }
-        
-        // Default idle state (only show icon, no text)
-        guard let track = playbackEngine.currentTrack else {
-            button.title = ""
-            return
-        }
-        
-        var elements: [String] = []
-        if settings.showTitle { elements.append(track.title) }
-        if settings.showArtist { elements.append(track.artist) }
-        let displayString = elements.joined(separator: " - ")
-        
-        // Cap at 40 characters for a responsive, clean status bar look
-        let maxChars = 40
-        if displayString.count > maxChars {
-            let index = displayString.index(displayString.startIndex, offsetBy: maxChars - 3)
-            button.title = String(displayString[..<index]) + "..."
-        } else {
-            button.title = displayString
-        }
     }
 }

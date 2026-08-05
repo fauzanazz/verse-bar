@@ -8,28 +8,6 @@ enum CoverFilter {
     case cover
 }
 
-struct SongStat: Identifiable {
-    let id: String
-    let title: String
-    let artist: String
-    let videoID: String?
-    let plays: Int
-}
-
-struct ArtistStat: Identifiable {
-    var id: String { artist }
-    let artist: String
-    let plays: Int
-}
-
-struct ListeningCapsule {
-    let totalPlays: Int
-    let topSongs: [SongStat]
-    let topArtists: [ArtistStat]
-}
-
-private let emptyListeningCapsule = ListeningCapsule(totalPlays: 0, topSongs: [], topArtists: [])
-
 final class ListeningStatsService {
     static let shared = ListeningStatsService()
 
@@ -41,6 +19,8 @@ final class ListeningStatsService {
     private var activeKey: String?
     private var countedThisSession = false
     private var lastProgress: TimeInterval = 0
+    private var activeRowID: Int64?
+    private var pendingSeconds: Double = 0
 
     private init() {
         let appSupportDirectory = FileManager.default
@@ -84,6 +64,10 @@ final class ListeningStatsService {
             return
         }
 
+        // One-column migration, idempotent by ignoring the duplicate-column
+        // error — that error is the expected steady state on every launch.
+        sqlite3_exec(database, "ALTER TABLE plays ADD COLUMN seconds INTEGER NOT NULL DEFAULT 0", nil, nil, nil)
+
         PlaybackEngine.shared.$currentTrack
             .receive(on: DispatchQueue.main)
             .sink { [weak self] track in
@@ -97,24 +81,47 @@ final class ListeningStatsService {
     }
 
     private func handle(_ track: Track?) {
-        guard let track else { return }
+        guard let track, PlaybackEngine.shared.isSourceActive else { return }
 
         let key = identityKey(track)
         let progress = track.currentProgress
         if key != activeKey {
+            // Track change: bank any buffered seconds on the old row, then reset.
+            flushPending()
             activeKey = key
             countedThisSession = false
-        } else if progress + 5 < lastProgress {
+            activeRowID = nil
+            lastProgress = progress
+            return
+        }
+        if progress + 5 < lastProgress {
+            // Loop reset or seek-back.
+            flushPending()
             countedThisSession = false
+            activeRowID = nil
+            lastProgress = progress
+            return
+        }
+
+        let delta = progress - lastProgress
+        if delta > 0 && delta <= 10 {
+            pendingSeconds += delta
         }
         lastProgress = progress
 
-        // ponytail: Seeking past the threshold counts; a loop reset hidden by the
-        // 5-second jitter tolerance can under-count. Track listened time if that matters.
+        // ponytail: Seconds listened before the play threshold trips are included
+        // (they sit in pendingSeconds and land on the row at insert time), but a
+        // track abandoned before the threshold records nothing at all. Seeking past
+        // the threshold counts; a loop reset hidden by the 5-second jitter
+        // tolerance can under-count.
         let threshold = min(30, max(1, track.duration * 0.5))
-        guard !countedThisSession, progress >= threshold else { return }
-        countedThisSession = true
-        record(track)
+        if !countedThisSession, progress >= threshold {
+            countedThisSession = true
+            record(track)
+        }
+        if pendingSeconds >= 15 {
+            flushPending()
+        }
     }
 
     private func identityKey(_ track: Track) -> String {
@@ -140,95 +147,151 @@ final class ListeningStatsService {
         title.range(of: "\\bcover\\b", options: [.regularExpression, .caseInsensitive]) != nil
     }
 
-    func capsule(monthStart: Date, filter: CoverFilter) -> ListeningCapsule {
+    private func coverPredicate(_ filter: CoverFilter) -> String {
+        switch filter {
+        case .all: return ""
+        case .original: return " AND is_cover = 0"
+        case .cover: return " AND is_cover = 1"
+        }
+    }
+
+    /// Every play in the interval, oldest first.
+    func plays(in interval: DateInterval, filter: CoverFilter) -> [PlayRecord] {
         queue.sync {
-            guard let database,
-                  let interval = Calendar.current.dateInterval(of: .month, for: monthStart) else {
-                return emptyListeningCapsule
-            }
-
-            let start = Int64(interval.start.timeIntervalSince1970)
-            let end = Int64(interval.end.timeIntervalSince1970)
-            let coverPredicate: String
-            switch filter {
-            case .all:
-                coverPredicate = ""
-            case .original:
-                coverPredicate = " AND is_cover = 0"
-            case .cover:
-                coverPredicate = " AND is_cover = 1"
-            }
-
-            let totalSQL = """
-            SELECT COUNT(*) FROM plays
-            WHERE played_at >= ? AND played_at < ?\(coverPredicate)
+            guard let database else { return [] }
+            let sql = """
+            SELECT played_at, song_key, video_id, title, artist, is_cover, seconds FROM plays
+            WHERE played_at >= ? AND played_at < ?\(coverPredicate(filter))
+            ORDER BY played_at ASC
             """
             var statement: OpaquePointer?
-            var totalPlays = 0
-            if sqlite3_prepare_v2(database, totalSQL, -1, &statement, nil) == SQLITE_OK {
-                bindRange(statement, start: start, end: end)
-                if sqlite3_step(statement) == SQLITE_ROW {
-                    totalPlays = Int(sqlite3_column_int64(statement, 0))
-                }
-            }
-            sqlite3_finalize(statement)
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(statement) }
+            bindRange(statement, start: Int64(interval.start.timeIntervalSince1970), end: Int64(interval.end.timeIntervalSince1970))
 
-            let songsSQL = """
-            SELECT song_key, title, artist, video_id, COUNT(*) c FROM plays
-            WHERE played_at >= ? AND played_at < ?\(coverPredicate)
+            var records: [PlayRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW,
+                  let key = columnText(statement, index: 1),
+                  let title = columnText(statement, index: 3),
+                  let artist = columnText(statement, index: 4) {
+                let videoID = sqlite3_column_type(statement, 2) == SQLITE_NULL
+                    ? nil
+                    : columnText(statement, index: 2)
+                records.append(PlayRecord(
+                    playedAt: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
+                    songKey: key,
+                    videoID: videoID,
+                    title: title,
+                    artist: artist,
+                    isCover: sqlite3_column_int(statement, 5) != 0,
+                    seconds: Int(sqlite3_column_int64(statement, 6))
+                ))
+            }
+            return records
+        }
+    }
+
+    /// Lifetime aggregates for everything played strictly before `end`.
+    func lifetimeTotals(before end: Date, filter: CoverFilter) -> LifetimeTotals {
+        queue.sync {
+            guard let database else {
+                return LifetimeTotals(seconds: 0, plays: 0, playsBySong: [:], playsByArtist: [:], titleBySong: [:])
+            }
+            let sql = """
+            SELECT song_key, title, artist, COUNT(*) c, SUM(seconds) s, MAX(played_at) m FROM plays
+            WHERE played_at < ?\(coverPredicate(filter))
             GROUP BY song_key
-            ORDER BY c DESC, MAX(played_at) DESC
-            LIMIT 5
             """
-            statement = nil
-            var topSongs: [SongStat] = []
-            if sqlite3_prepare_v2(database, songsSQL, -1, &statement, nil) == SQLITE_OK {
-                bindRange(statement, start: start, end: end)
-                while sqlite3_step(statement) == SQLITE_ROW,
-                      let key = columnText(statement, index: 0),
-                      let title = columnText(statement, index: 1),
-                      let artist = columnText(statement, index: 2) {
-                    let videoID = sqlite3_column_type(statement, 3) == SQLITE_NULL
-                        ? nil
-                        : columnText(statement, index: 3)
-                    topSongs.append(SongStat(
-                        id: key,
-                        title: title,
-                        artist: artist,
-                        videoID: videoID,
-                        plays: Int(sqlite3_column_int64(statement, 4))
-                    ))
-                }
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+                return LifetimeTotals(seconds: 0, plays: 0, playsBySong: [:], playsByArtist: [:], titleBySong: [:])
             }
-            sqlite3_finalize(statement)
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_int64(statement, 1, Int64(end.timeIntervalSince1970))
 
-            let artistsSQL = """
-            SELECT artist, COUNT(*) c FROM plays
-            WHERE played_at >= ? AND played_at < ?\(coverPredicate)
-            GROUP BY artist
-            ORDER BY c DESC, MAX(played_at) DESC
-            LIMIT 5
-            """
-            statement = nil
-            var topArtists: [ArtistStat] = []
-            if sqlite3_prepare_v2(database, artistsSQL, -1, &statement, nil) == SQLITE_OK {
-                bindRange(statement, start: start, end: end)
-                while sqlite3_step(statement) == SQLITE_ROW,
-                      let artist = columnText(statement, index: 0) {
-                    topArtists.append(ArtistStat(
-                        artist: artist,
-                        plays: Int(sqlite3_column_int64(statement, 1))
-                    ))
-                }
+            var seconds = 0
+            var plays = 0
+            var playsBySong: [String: Int] = [:]
+            var playsByArtist: [String: Int] = [:]
+            var titleBySong: [String: String] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW,
+                  let key = columnText(statement, index: 0),
+                  let title = columnText(statement, index: 1),
+                  let artist = columnText(statement, index: 2) {
+                let groupPlays = Int(sqlite3_column_int64(statement, 3))
+                plays += groupPlays
+                seconds += Int(sqlite3_column_int64(statement, 4))
+                playsBySong[key] = groupPlays
+                playsByArtist[artist, default: 0] += groupPlays
+                titleBySong[key] = title
             }
-            sqlite3_finalize(statement)
-
-            return ListeningCapsule(
-                totalPlays: totalPlays,
-                topSongs: topSongs,
-                topArtists: topArtists
+            return LifetimeTotals(
+                seconds: seconds,
+                plays: plays,
+                playsBySong: playsBySong,
+                playsByArtist: playsByArtist,
+                titleBySong: titleBySong
             )
         }
+    }
+
+    /// songKey → first-ever play time, for the discoveries card.
+    func firstPlayByKey(filter: CoverFilter) -> [String: Date] {
+        queue.sync {
+            guard let database else { return [:] }
+            let sql = "SELECT song_key, MIN(played_at) FROM plays WHERE 1=1\(coverPredicate(filter)) GROUP BY song_key"
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [:] }
+            defer { sqlite3_finalize(statement) }
+
+            var byKey: [String: Date] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW,
+                  let key = columnText(statement, index: 0) {
+                byKey[key] = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 1)))
+            }
+            return byKey
+        }
+    }
+
+    /// Distinct month starts that have at least one play, newest first.
+    func monthsWithPlays() -> [Date] {
+        queue.sync {
+            guard let database else { return [] }
+            let sql = "SELECT DISTINCT strftime('%Y-%m-01', played_at, 'unixepoch', 'localtime') FROM plays ORDER BY 1 DESC"
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(statement) }
+
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = .current
+            var months: [Date] = []
+            while sqlite3_step(statement) == SQLITE_ROW,
+                  let text = columnText(statement, index: 0),
+                  let date = formatter.date(from: text) {
+                months.append(date)
+            }
+            return months
+        }
+    }
+
+    /// Orchestrates the fetches above and hands off to ListeningCapsule.build.
+    /// Runs on the caller's thread; the fetch helpers synchronize internally.
+    func capsule(monthStart: Date, filter: CoverFilter) -> ListeningCapsule {
+        guard let interval = Calendar.current.dateInterval(of: .month, for: monthStart),
+              let previousInterval = Calendar.current.dateInterval(
+                  of: .month,
+                  for: interval.start.addingTimeInterval(-1)
+              ) else { return .empty }
+        return ListeningCapsule.build(
+            monthStart: interval.start,
+            records: plays(in: interval, filter: filter),
+            previous: plays(in: previousInterval, filter: filter),
+            lifetimeAtMonthEnd: lifetimeTotals(before: interval.end, filter: filter),
+            firstPlayByKey: firstPlayByKey(filter: filter),
+            now: Date(),
+            calendar: Calendar.current
+        )
     }
 
     /// Most recent distinct songs, newest first.
@@ -284,16 +347,45 @@ final class ListeningStatsService {
         return String(cString: value)
     }
 
+    /// Writes buffered listened seconds onto the current play row.
+    private func flushPending() {
+        let seconds = Int(pendingSeconds)
+        guard seconds > 0, let rowID = activeRowID else { return }
+        pendingSeconds -= Double(seconds)
+        queue.async { [weak self] in
+            guard let self, let database = self.database else { return }
+            let sql = "UPDATE plays SET seconds = seconds + ? WHERE id = ?"
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_int(statement, 1, Int32(seconds))
+            sqlite3_bind_int64(statement, 2, rowID)
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                Logger.error("Failed to flush listened seconds", category: "stats", error: StatsError.sqlite)
+                return
+            }
+            Logger.debug("Flushed \(seconds)s listened time", category: "stats")
+        }
+    }
+
+    /// Public flush for app termination.
+    func flush() {
+        flushPending()
+        queue.sync {}
+    }
+
     private func record(_ track: Track) {
         let key = identityKey(track)
         let videoID = Self.videoID(fromArtworkURL: track.artworkURL)
         let isCover = Self.isCover(title: track.title)
+        let seconds = Int(pendingSeconds)
+        pendingSeconds -= Double(seconds)
 
         queue.async { [weak self] in
             guard let self, let database = self.database else { return }
             let sql = """
-            INSERT INTO plays (played_at, song_key, video_id, title, artist, is_cover)
-            VALUES (strftime('%s','now'), ?, ?, ?, ?, ?)
+            INSERT INTO plays (played_at, song_key, video_id, title, artist, is_cover, seconds)
+            VALUES (strftime('%s','now'), ?, ?, ?, ?, ?, ?)
             """
             var statement: OpaquePointer?
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
@@ -307,9 +399,14 @@ final class ListeningStatsService {
             sqlite3_bind_text(statement, 3, track.title, -1, self.transient)
             sqlite3_bind_text(statement, 4, track.artist, -1, self.transient)
             sqlite3_bind_int(statement, 5, isCover ? 1 : 0)
+            sqlite3_bind_int(statement, 6, Int32(seconds))
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 Logger.error("Failed to record listening stat", category: "stats", error: StatsError.sqlite)
                 return
+            }
+            let rowID = sqlite3_last_insert_rowid(database)
+            DispatchQueue.main.async { [weak self] in
+                self?.activeRowID = rowID
             }
             Logger.debug("Recorded play: \(track.artist) — \(track.title)", category: "stats")
         }

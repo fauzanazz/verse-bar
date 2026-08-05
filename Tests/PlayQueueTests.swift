@@ -104,4 +104,15 @@ final class PlayQueueTests: XCTestCase {
         XCTAssertEqual(queue.current?.duration, 100)
         XCTAssertEqual(queue.tracks[0].duration, 100)
     }
+
+    func testQueueSurvivesJSONRoundTrip() throws {
+        var queue = PlayQueue()
+        queue.load(tracks(3), startAt: 1)   // `tracks(_:)` is the file's existing fixture helper
+        queue.repeatMode = .all
+        queue.setShuffled(true)
+        let decoded = try JSONDecoder().decode(
+            PlayQueue.self, from: JSONEncoder().encode(queue))
+        XCTAssertEqual(decoded, queue)
+        XCTAssertEqual(decoded.current, queue.current)
+    }
 }

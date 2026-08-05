@@ -8,4 +8,5 @@ build/
 DerivedData/
 *.zip
 *.sha256
+playlists.json
 Verse Bar.app/

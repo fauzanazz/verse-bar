@@ -48,8 +48,6 @@ struct SettingsView: View {
                         
                         VStack(alignment: .leading, spacing: 10) {
                             Toggle("Zen Mode (lyrics only)", isOn: $settings.zenMode)
-                            Toggle("Show Artist Name", isOn: $settings.showArtist)
-                            Toggle("Show Track Title", isOn: $settings.showTitle)
                             Toggle("Show Music Island (Dynamic Island under notch)", isOn: $settings.showNotchIsland)
                             Toggle("Romanize Korean / Japanese / Chinese lyrics", isOn: $settings.showRomanization)
                         }
